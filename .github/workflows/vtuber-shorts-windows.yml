@@ -1,0 +1,56 @@
+# Fork-only test build: builds the vtuber-shorts branch for Windows x64 (unsigned) with the
+# project's own packaging script and attaches the portable build to the workflow run as a
+# download. Not part of upstream FilmCraft; leave this file out of any pull request to it.
+name: Windows test build (vtuber-shorts)
+
+on:
+  push:
+    branches: [vtuber-shorts]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-test-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    timeout-minutes: 150
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+      RUST_BACKTRACE: 1
+      # shown in Help ▸ About, so the test build is easy to tell apart
+      FILMCRAFT_VERSION: 0.7.2-shorts
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal --target x86_64-pc-windows-msvc
+          rustup default stable
+          rustc --version
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-x64-test-build
+
+      - name: Install WiX (the packaging script also builds an MSI)
+        shell: pwsh
+        run: dotnet tool install --global wix --version 5.0.2
+
+      - name: Build and package
+        shell: pwsh
+        run: ./packaging/windows/package.ps1 -Arch x64
+
+      - name: Upload the portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: FilmCraft-vtuber-shorts-windows-x64-portable
+          path: target/windows-package/filmcraft-*-windows-x64-portable/
+          if-no-files-found: error
+          retention-days: 30
