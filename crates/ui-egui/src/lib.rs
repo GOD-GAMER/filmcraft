@@ -1321,6 +1321,17 @@ impl FilmcraftApp {
                     app.session.execute("graphics.newFromFile", json!({"path": path})).map_err(|e| e.to_string())
                 })
             }
+            "shorts.chatOverlay" | "shorts.chatHighlights" => {
+                let cmd = id.to_string();
+                let mut params = params.clone();
+                self.pick(FileDialog::open_files(&["json", "jsonl"]), move |app, paths| {
+                    let Some(path) = paths.into_iter().next() else { return Ok(Value::Null) };
+                    if let Some(o) = params.as_object_mut() {
+                        o.insert("path".into(), json!(path));
+                    }
+                    app.session.execute(&cmd, params).map_err(|e| e.to_string())
+                })
+            }
             "captions.import" => self.pick(FileDialog::open_files(&["srt", "vtt", "scc", "mcc", "stl", "ttml", "dfxp", "xml"]), |app, paths| {
                 let Some(path) = paths.into_iter().next() else { return Ok(Value::Null) };
                 app.session.execute("captions.import", json!({"path": path})).map_err(|e| e.to_string())

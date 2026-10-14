@@ -554,7 +554,13 @@ fn plain_layer(frame: &VideoFrame, n: usize, opacity: f32, blend: Blend) -> Laye
 /// convert it with.
 fn media_frame(item: &TrackItem, t: Tick, sources: &dyn SourceProvider, want: f32, src_size: (u32, u32)) -> Option<(SharedSource, Arc<VideoFrame>, usize)> {
     let src = sources.source(item.item)?;
-    let frame = src.video_frame(FrameRequest { time: video_source_time(item, t, src.info().frame_rate()), scale: want }).ok()?;
+    let mut time = video_source_time(item, t, src.info().frame_rate());
+    if item.has_time_remap() {
+        // a remapped clip can ask for more picture than the media has: show its last frame
+        let last = src.info().duration - src.info().frame_rate().frame_duration().max(Tick(1));
+        time = time.min(last.max(Tick::ZERO));
+    }
+    let frame = src.video_frame(FrameRequest { time, scale: want }).ok()?;
     let n = decimation(frame.width as f32, src_size.0 as f32 * want);
     Some((src, frame, n))
 }
@@ -565,7 +571,8 @@ fn media_frame(item: &TrackItem, t: Tick, sources: &dyn SourceProvider, want: f3
 /// showing one frame past the clip's source range and never its In (#318). Snapped down to the
 /// start of the `media_rate` frame that contains it, every reader shows that frame.
 pub(crate) fn video_source_time(item: &TrackItem, t: Tick, media_rate: filmcraft_time::FrameRate) -> Tick {
-    let ft = item.source_time_at(t);
+    // Time Remapping changes which picture is shown (reversed and held clips ignore it)
+    let ft = item.picture_time_at(t);
     if !item.reverse || item.frame_hold.is_some() || media_rate.frame_duration().0 <= 0 {
         return ft;
     }
@@ -600,8 +607,8 @@ pub(crate) fn base_layer(
     sources: &dyn SourceProvider,
     want: f32,
 ) -> Option<Image> {
-    // `ft`: the media time of the frame shown
-    let ft = item.source_time_at(t);
+    // `ft`: the media time of the frame shown (with Time Remapping)
+    let ft = item.picture_time_at(t);
     let mt = item.effect_time_at(t);
     let src_size = source_size(project, item.item)?;
     let pi = project.item(item.item)?;
@@ -661,10 +668,10 @@ pub fn interpolation_blend(item: &TrackItem, t: Tick, src_rate: filmcraft_time::
     if item.time_interpolation == filmcraft_project::TimeInterpolation::FrameSampling || item.frame_hold.is_some() {
         return None;
     }
-    if (item.speed.abs() - 1.0).abs() < 1e-9 {
+    if (item.speed.abs() - 1.0).abs() < 1e-9 && !item.has_time_remap() {
         return None;
     }
-    let mt = item.source_time_at(t);
+    let mt = item.picture_time_at(t);
     if src_rate.frame_duration().0 <= 0 {
         return None;
     }

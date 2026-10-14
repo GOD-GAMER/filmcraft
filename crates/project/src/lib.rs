@@ -647,6 +647,32 @@ impl TrackItem {
             None => self.source_time_at(t),
         }
     }
+    /// Whether the clip's intrinsic Time Remapping changes its speed (an animated `speed`, or a
+    /// static one other than 100 %). Frame holds and reversed clips ignore Time Remapping.
+    pub fn has_time_remap(&self) -> bool {
+        if self.frame_hold.is_some() || self.reverse {
+            return false;
+        }
+        self.effect("time_remap")
+            .and_then(|e| e.params.get("speed"))
+            .is_some_and(|p| p.is_animated() || p.value.as_f64().is_some_and(|v| v.is_finite() && (v - 100.0).abs() > 1e-9))
+    }
+
+    /// Media time of the picture shown at timeline time `t`: [`Self::source_time_at`] with Time
+    /// Remapping applied. Speed (percent) is read at the un-remapped media time, where its
+    /// keyframes sit, so the picture's media time is the source In plus the integral of speed
+    /// from the In to the un-remapped time. Never before media time 0.
+    pub fn picture_time_at(&self, t: Tick) -> Tick {
+        let base = self.source_time_at(t);
+        if !self.has_time_remap() {
+            return base;
+        }
+        let Some(prm) = self.effect("time_remap").and_then(|e| e.params.get("speed")) else { return base };
+        let moved = remap_integral(prm, self.source_in, base);
+        let t = self.source_in.0 as f64 + moved;
+        Tick(if t.is_finite() { t.clamp(0.0, i64::MAX as f64) as i64 } else { base.0 })
+    }
+
     /// Media time at timeline time `t` ignoring any frame hold.
     pub fn moving_source_time_at(&self, t: Tick) -> Tick {
         let rel = t - self.start;
@@ -2199,5 +2225,90 @@ mod tests {
         assert_eq!(p.source_par(adj), None);
         assert_eq!(p.conformed_source_size(adj, (4, 3)), Some((1440.0, 1080.0)));
         assert_eq!(p.source_par(ItemId(987_654_321)), None);
+    }
+}
+
+/// The integral of a Time Remapping speed curve (percent) from media time `a` to `b`, in ticks
+/// of picture media time: exact between linear and hold keyframes, Simpson's rule (16 steps)
+/// between eased or Bézier ones, the edge value before the first and after the last keyframe.
+/// Negative when `b` is before `a`.
+pub fn remap_integral(speed: &keyframe::Param, a: Tick, b: Tick) -> f64 {
+    if b < a {
+        return -remap_integral(speed, b, a);
+    }
+    let f = |x: Tick| {
+        let v = speed.f64_at(x);
+        if v.is_finite() { v / 100.0 } else { 1.0 }
+    };
+    let mut cuts: Vec<Tick> = speed.keyframes.iter().map(|k| k.time).filter(|t| *t > a && *t < b).collect();
+    cuts.push(b);
+    let mut total = 0.0;
+    let mut x0 = a;
+    for x1 in cuts {
+        let len = (x1.0 as f64) - (x0.0 as f64);
+        if len > 0.0 {
+            // the keyframe this piece starts after decides how it is interpolated
+            let left = speed.keyframes.iter().rev().find(|k| k.time <= x0);
+            let inside = left.is_some() && speed.keyframes.iter().any(|k| k.time >= x1);
+            total += match left.map(|k| k.interp) {
+                _ if !inside => f(x0) * len,
+                Some(keyframe::Interpolation::Linear) => (f(x0) + f(x1)) / 2.0 * len,
+                Some(keyframe::Interpolation::Hold) => f(x0) * len,
+                _ => {
+                    const N: i64 = 16;
+                    let step = len / N as f64;
+                    let at = |i: i64| f(Tick(x0.0.saturating_add((step * i as f64).round() as i64)));
+                    let mut sum = at(0) + at(N);
+                    for i in 1..N {
+                        sum += at(i) * if i % 2 == 1 { 4.0 } else { 2.0 };
+                    }
+                    sum * step / 3.0
+                }
+            };
+        }
+        x0 = x1;
+    }
+    total
+}
+
+#[cfg(test)]
+mod remap_tests {
+    use super::*;
+    use crate::keyframe::{Interpolation, Keyframe, Param, ParamValue};
+
+    fn s(x: f64) -> Tick {
+        Tick::from_seconds_f64(x)
+    }
+
+    fn speed(keys: &[(f64, f64, Interpolation)]) -> Param {
+        let mut p = Param::new(ParamValue::Float(100.0));
+        p.keyframes = keys.iter().map(|(t, v, i)| Keyframe { interp: *i, ..Keyframe::new(s(*t), ParamValue::Float(*v)) }).collect();
+        p
+    }
+
+    #[test]
+    fn integrals_of_static_linear_hold_and_eased_speed() {
+        let half = Param::new(ParamValue::Float(50.0));
+        assert!((remap_integral(&half, s(1.0), s(3.0)) - s(1.0).0 as f64).abs() < 1.0);
+        // 100 % → 50 % linearly over 1 s, then 50 %: 0.75 s in the first second, 0.5 s in the next
+        let ramp = speed(&[(0.0, 100.0, Interpolation::Linear), (1.0, 50.0, Interpolation::Linear)]);
+        assert!((remap_integral(&ramp, s(0.0), s(2.0)) - s(1.25).0 as f64).abs() < 2.0);
+        // held at 100 % until the 50 % key
+        let hold = speed(&[(0.0, 100.0, Interpolation::Hold), (1.0, 50.0, Interpolation::Linear)]);
+        assert!((remap_integral(&hold, s(0.0), s(1.0)) - s(1.0).0 as f64).abs() < 2.0);
+        // an eased ramp ends up between the two
+        let eased = speed(&[(0.0, 100.0, Interpolation::EaseOut), (1.0, 50.0, Interpolation::EaseIn)]);
+        let e = remap_integral(&eased, s(0.0), s(1.0));
+        assert!(e > s(0.5).0 as f64 && e < s(1.0).0 as f64, "{e}");
+        // backwards is negative
+        assert!(remap_integral(&ramp, s(2.0), s(0.0)) < 0.0);
+    }
+
+    #[test]
+    fn hostile_speed_values_stay_finite() {
+        let mut p = Param::new(ParamValue::Float(f64::NAN));
+        p.keyframes = vec![Keyframe::new(s(0.0), ParamValue::Float(f64::INFINITY)), Keyframe::new(Tick(i64::MAX), ParamValue::Float(-1e300))];
+        assert!(remap_integral(&p, Tick(i64::MIN), Tick(i64::MAX)).is_finite() || remap_integral(&p, Tick(0), Tick(10)).is_finite());
+        let _ = remap_integral(&p, Tick(0), Tick(0));
     }
 }

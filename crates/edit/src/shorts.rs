@@ -234,6 +234,178 @@ pub fn zoomed_crop(crop: [f64; 4], anchor_pct: (f64, f64), zoom: f64) -> [f64; 4
     [c(left), c(top), c(100.0 - right), c(100.0 - bottom)]
 }
 
+/// How [`loud_moments`] finds the loud reactions in a level curve.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HypeRules {
+    /// How far above the surrounding level (the median of the `window` around it), in dB, a
+    /// moment must be.
+    pub sensitivity_db: f64,
+    /// Nothing quieter than this (dBFS) counts, however much it stands out.
+    pub floor_db: f64,
+    /// Width of the surrounding window, in seconds.
+    pub window_s: f64,
+    /// Moments closer than this (seconds) are one moment; the louder one wins.
+    pub min_gap_s: f64,
+    /// At most this many moments, the most striking ones (0 counts as 1).
+    pub max_moments: usize,
+}
+
+impl Default for HypeRules {
+    fn default() -> Self {
+        Self { sensitivity_db: 9.0, floor_db: -32.0, window_s: 6.0, min_gap_s: 2.0, max_moments: 8 }
+    }
+}
+
+/// A loud moment: where it starts (index into the level curve) and how far above its
+/// surroundings it peaks (dB).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LoudMoment {
+    pub at: usize,
+    pub excess_db: f64,
+}
+
+/// The loud reactions (screams, laughs, hype) in `levels` (dBFS, one value every `hop_s`
+/// seconds): runs of levels at least `sensitivity_db` above the median of the surrounding
+/// window and above `floor_db`. The most striking ones are kept, at least `min_gap_s` apart, in
+/// time order. Non-finite levels count as silence.
+pub fn loud_moments(levels: &[f64], hop_s: f64, rules: &HypeRules) -> Vec<LoudMoment> {
+    if levels.is_empty() || !(hop_s.is_finite() && hop_s > 0.0) {
+        return Vec::new();
+    }
+    let lv: Vec<f64> = levels.iter().map(|v| if v.is_finite() { v.max(-120.0) } else { -120.0 }).collect();
+    let n = lv.len();
+    let span = |secs: f64| if secs.is_finite() && secs > 0.0 { ((secs / hop_s).round() as usize).min(n.max(1)) } else { 0 };
+    let half = span(rules.window_s / 2.0).max(1);
+    // the surrounding level: a sliding median
+    let mut base = Vec::with_capacity(n);
+    let mut win: Vec<f64> = Vec::with_capacity(half.saturating_mul(2).saturating_add(1));
+    for i in 0..n {
+        win.clear();
+        win.extend(lv.iter().take(i.saturating_add(half).saturating_add(1).min(n)).skip(i.saturating_sub(half)).copied());
+        win.sort_by(f64::total_cmp);
+        base.push(win.get(win.len() / 2).copied().unwrap_or(-120.0));
+    }
+    // runs of loud hops (a gap of up to two hops does not break a run)
+    let loud = |i: usize| -> Option<f64> {
+        let (l, b) = (*lv.get(i)?, *base.get(i)?);
+        (l >= rules.floor_db && l - b >= rules.sensitivity_db).then_some(l - b)
+    };
+    let mut runs: Vec<LoudMoment> = Vec::new();
+    let mut quiet = usize::MAX;
+    for i in 0..n {
+        match loud(i) {
+            Some(x) => {
+                match runs.last_mut() {
+                    Some(r) if quiet <= 2 => r.excess_db = r.excess_db.max(x),
+                    _ => runs.push(LoudMoment { at: i, excess_db: x }),
+                }
+                quiet = 0;
+            }
+            None => quiet = quiet.saturating_add(1),
+        }
+    }
+    // the most striking first, keeping them apart
+    let gap = span(rules.min_gap_s);
+    runs.sort_by(|a, b| b.excess_db.total_cmp(&a.excess_db).then(a.at.cmp(&b.at)));
+    let mut out: Vec<LoudMoment> = Vec::new();
+    for r in runs {
+        if out.len() >= rules.max_moments.max(1) {
+            break;
+        }
+        if out.iter().all(|o| o.at.abs_diff(r.at) >= gap) {
+            out.push(r);
+        }
+    }
+    out.sort_by_key(|m| m.at);
+    out
+}
+
+/// A word as it is matched: lower case, letters, digits and apostrophes only.
+pub fn normalize_word(text: &str) -> String {
+    text.chars().filter(|c| c.is_alphanumeric() || *c == '\'' || *c == '’').flat_map(char::to_lowercase).filter(|c| *c != '\'' && *c != '’').collect()
+}
+
+/// Bleeped when the word contains one of these.
+const SWEAR_STEMS: &[&str] = &["fuck", "shit", "bitch", "cunt", "motherf"];
+/// Bleeped when the word is exactly one of these (so "class" and "pass" are left alone).
+const SWEAR_WORDS: &[&str] = &[
+    "ass",
+    "asses",
+    "asshole",
+    "assholes",
+    "dumbass",
+    "jackass",
+    "dick",
+    "dicks",
+    "dickhead",
+    "pussy",
+    "bastard",
+    "bastards",
+    "slut",
+    "sluts",
+    "whore",
+    "whores",
+    "wtf",
+    "stfu",
+    "goddamn",
+    "goddamnit",
+];
+
+/// Whether `word` should be bleeped: it matches the built-in list of strong swear words, or one
+/// of `extra` (whole words, compared after [`normalize_word`]).
+pub fn is_swear(word: &str, extra: &[String]) -> bool {
+    let w = normalize_word(word);
+    if w.is_empty() {
+        return false;
+    }
+    SWEAR_STEMS.iter().any(|s| w.contains(s)) || SWEAR_WORDS.contains(&w.as_str()) || extra.iter().any(|e| normalize_word(e) == w)
+}
+
+/// `word` with every letter after the first one replaced by `*` ("Fucking!" → "F******!"). The
+/// number of characters stays the same, so styled runs over a caption keep their place.
+pub fn mask_word(word: &str) -> String {
+    let mut first = true;
+    word.chars()
+        .map(|c| {
+            if !c.is_alphanumeric() {
+                c
+            } else if first {
+                first = false;
+                c
+            } else {
+                '*'
+            }
+        })
+        .collect()
+}
+
+/// Every place a phrase from `phrases` is said: the index of its first word in `words`. A phrase
+/// is one or more words, compared after [`normalize_word`] ("oh my god" matches "Oh, my God!").
+/// Empty phrases are ignored. Matches are in time order and never overlap.
+pub fn phrase_matches(words: &[SeqWord], phrases: &[String]) -> Vec<usize> {
+    let norm: Vec<String> = words.iter().map(|w| normalize_word(&w.text)).collect();
+    let pats: Vec<Vec<String>> =
+        phrases.iter().map(|p| p.split_whitespace().map(normalize_word).filter(|w| !w.is_empty()).collect::<Vec<_>>()).filter(|p| !p.is_empty()).collect();
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < norm.len() {
+        let hit = pats.iter().filter(|p| norm.get(i..i.saturating_add(p.len())).is_some_and(|w| w == p.as_slice())).map(Vec::len).max();
+        match hit {
+            Some(len) => {
+                out.push(i);
+                i = i.saturating_add(len.max(1));
+            }
+            None => i += 1,
+        }
+    }
+    out
+}
+
+/// The phrases of a comma- (or newline-) separated list, trimmed, empties dropped.
+pub fn split_phrases(list: &str) -> Vec<String> {
+    list.split([',', '\n', ';']).map(str::trim).filter(|p| !p.is_empty()).map(str::to_string).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -384,5 +556,67 @@ mod tests {
         assert_eq!(c, [35.0, 25.0, 35.0, 25.0]);
         assert_eq!(zoomed_crop([20.0, 0.0, 20.0, 0.0], (50.0, 50.0), 1.0), [20.0, 0.0, 20.0, 0.0]);
         assert_eq!(zoomed_crop([1.0, 2.0, 3.0, 4.0], (50.0, 50.0), f64::NAN), [1.0, 2.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    fn loud_moments_stand_out_from_their_surroundings() {
+        // 20 s of talking at -30 dB with a scream at 5 s and a laugh at 12 s, 50 ms hops
+        let hop = 0.05;
+        let mut lv = vec![-30.0; 400];
+        for v in lv.iter_mut().skip(100).take(10) {
+            *v = -8.0;
+        }
+        for v in lv.iter_mut().skip(240).take(6) {
+            *v = -15.0;
+        }
+        let m = loud_moments(&lv, hop, &HypeRules::default());
+        assert_eq!(m.iter().map(|x| x.at).collect::<Vec<_>>(), vec![100, 240]);
+        assert!(m[0].excess_db > m[1].excess_db);
+        // only the strongest when one is asked for
+        let one = loud_moments(&lv, hop, &HypeRules { max_moments: 1, ..HypeRules::default() });
+        assert_eq!(one.iter().map(|x| x.at).collect::<Vec<_>>(), vec![100]);
+        // too close together: one moment
+        let mut close = vec![-30.0; 400];
+        close[100] = -5.0;
+        close[120] = -6.0;
+        assert_eq!(loud_moments(&close, hop, &HypeRules::default()).len(), 1);
+        // a quiet stretch that stands out but stays under the floor is not hype
+        let mut whisper = vec![-80.0; 400];
+        whisper[100] = -50.0;
+        assert!(loud_moments(&whisper, hop, &HypeRules::default()).is_empty());
+    }
+
+    #[test]
+    fn loud_moments_take_hostile_input() {
+        let rules = HypeRules { sensitivity_db: f64::NAN, floor_db: -32.0, window_s: f64::INFINITY, min_gap_s: -1.0, max_moments: 0 };
+        let lv = vec![f64::NAN, f64::INFINITY, -10.0, f64::NEG_INFINITY, 0.0];
+        let _ = loud_moments(&lv, 0.05, &rules);
+        assert!(loud_moments(&lv, 0.0, &HypeRules::default()).is_empty());
+        assert!(loud_moments(&lv, f64::NAN, &HypeRules::default()).is_empty());
+        assert!(loud_moments(&[], 0.05, &HypeRules::default()).is_empty());
+    }
+
+    #[test]
+    fn swears_are_matched_and_masked_without_false_alarms() {
+        for w in ["Fuck", "fucking!", "MOTHERFUCKER", "shit,", "bullshit", "ass", "WTF?", "dickhead"] {
+            assert!(is_swear(w, &[]), "{w}");
+        }
+        for w in ["class", "pass", "assume", "Dickens", "shift", "", "!!"] {
+            assert!(!is_swear(w, &[]), "{w}");
+        }
+        assert!(is_swear("Bonk!", &["bonk".into()]));
+        assert_eq!(mask_word("Fucking!"), "F******!");
+        assert_eq!(mask_word("SHIT"), "S***");
+        assert_eq!(mask_word("ünïcödé"), "ü******");
+        assert_eq!(mask_word("Fucking!").chars().count(), "Fucking!".chars().count());
+    }
+
+    #[test]
+    fn phrases_match_words_in_order() {
+        let words = vec![w("Oh,", 0.0, 0.1), w("my", 0.1, 0.2), w("God!", 0.2, 0.3), w("bonk", 0.4, 0.5), w("BONK.", 0.6, 0.7), w("my", 0.8, 0.9)];
+        assert_eq!(phrase_matches(&words, &["bonk".into()]), vec![3, 4]);
+        assert_eq!(phrase_matches(&words, &["oh my god".into(), "my".into()]), vec![0, 5]);
+        assert!(phrase_matches(&words, &["".into(), "  ".into(), "?!".into()]).is_empty());
+        assert_eq!(split_phrases("bonk, what?! ,, oh my god\nnice"), vec!["bonk", "what?!", "oh my god", "nice"]);
     }
 }

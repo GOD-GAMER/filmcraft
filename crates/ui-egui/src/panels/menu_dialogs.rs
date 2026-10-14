@@ -71,6 +71,8 @@ fn meta(command: &str) -> Option<(&'static str, &'static str, &'static str)> {
         "help.systemCompatibilityReport" => (tl!("System Compatibility Report"), "systemReport", tl!("Close")),
         "file.newColorMatte" => (tl!("New Color Matte"), "colorMatte", tl!("OK")),
         "project.matteColor" => (tl!("Color Matte Color"), "matteColor", tl!("OK")),
+        "shorts.keywordEffects" => (tl!("Effects on Words"), "shortsWords", tl!("OK")),
+        "shorts.hookTitle" => (tl!("Hook Title"), "shortsHook", tl!("OK")),
         _ => return None,
     })
 }
@@ -94,6 +96,8 @@ fn dialog_command(id: &str) -> Option<&'static str> {
         "markers.addFlashCue" => "markers.addFlashCue",
         "file.newColorMatte" => "file.newColorMatte",
         "project.matteColor" => "project.matteColor",
+        "shorts.keywordEffects" => "shorts.keywordEffects",
+        "shorts.hookTitle" => "shorts.hookTitle",
         _ => return None,
     })
 }
@@ -345,6 +349,8 @@ fn defaults(app: &mut FilmcraftApp, cmd: &str, id: &str) -> Result<(Value, Value
         }
         "file.saveAsTemplate" => (json!({"name": s.project.name}), Value::Null),
         "markers.addFlashCue" => (json!({"name": "", "comment": ""}), Value::Null),
+        "shorts.keywordEffects" => (json!({"words": "", "effect": "punch"}), Value::Null),
+        "shorts.hookTitle" => (json!({"text": "WAIT FOR IT…", "seconds": 2.5}), Value::Null),
         "file.newColorMatte" => {
             let st = s.active_sequence().map(|q| q.settings.clone()).unwrap_or_default();
             (json!({"color": "#000000", "name": "Color Matte", "width": st.width, "height": st.height, "seconds": 5.0}), Value::Null)
@@ -775,6 +781,15 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
             "markers.addFlashCue" => {
                 text(ui, &mut elems, pre, p, "name", tl!("Name:"), 220.0);
                 text(ui, &mut elems, pre, p, "comment", tl!("Comments:"), 220.0);
+            }
+            "shorts.keywordEffects" => {
+                text(ui, &mut elems, pre, p, "words", tl!("Words (comma-separated):"), 260.0);
+                let effects = [("punch", tl!("Punch In")), ("shake", tl!("Camera Shake")), ("glitch", tl!("Glitch")), ("flash", tl!("Flash"))];
+                radios(ui, &mut elems, pre, p, "effect", tl!("Effect:"), &effects);
+            }
+            "shorts.hookTitle" => {
+                text(ui, &mut elems, pre, p, "text", tl!("Text:"), 260.0);
+                number(ui, &mut elems, pre, p, "seconds", tl!("Duration:"), 0.5..=30.0, " s");
             }
             "help.systemCompatibilityReport" => {
                 let r = &d.info;

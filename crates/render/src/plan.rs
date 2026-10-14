@@ -346,7 +346,7 @@ fn push_item(
     out: &mut PlanStack,
 ) {
     // frame time (`ft`) vs. effect time (`mt`): they differ inside a frame hold without Hold Filters
-    let ft = item.source_time_at(t);
+    let ft = item.picture_time_at(t);
     let mt = item.effect_time_at(t);
     let (op, own) = crate::opacity_blend(item, mt);
     let bl = blend.unwrap_or(own);

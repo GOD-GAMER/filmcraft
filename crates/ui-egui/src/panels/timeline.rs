@@ -902,7 +902,7 @@ fn draw_clip(
             let mode = app.ui.timeline.thumbnail_mode;
             let (pps, frozen) = (app.ui.timeline.pps, app.tl.thumb_pps);
             for (x, w, offset) in zoomed_thumbnail_tiles(mode, th.min.x, th.max.x, tw, visible, it.duration, rate.frame_duration(), pps, frozen) {
-                let mt = rate.snap(it.source_time_at(it.start + offset));
+                let mt = rate.snap(it.picture_time_at(it.start + offset));
                 // a multi-camera clip shows its angle's clip
                 let (thumb_item, mt) = app
                     .session

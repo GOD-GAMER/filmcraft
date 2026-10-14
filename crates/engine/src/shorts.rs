@@ -37,21 +37,58 @@ fn spec(id: &'static str, label: &'static str, params: &'static str, run: Run) -
 
 const VERTICAL: &str = r#"{"width":u32=1080,"height":u32=1920,"name":str?}"#;
 const STACK: &str = r#"{"clips":[id]?,"split":f=0.5,"model":[x0,y0,x1,y1]?,"game":[x0,y0,x1,y1]?}"#;
-const CAPTIONS: &str = r##"{"maxWords":n=3,"maxChars":n?,"color":"#ffffff"?,"highlight":"#ffd60a"?,"font":"Inter"?,"fontStyle":"Bold"?,"size":f?,"position":[x,y]?,"uppercase":bool=true,"hold":seconds=0.25}"##;
+const CAPTIONS: &str = r##"{"maxWords":n=3,"maxChars":n?,"color":"#ffffff"?,"highlight":"#ffd60a"?,"font":"Inter"?,"fontStyle":"Bold"?,"size":f?,"position":[x,y]?,"uppercase":bool=true,"hold":seconds=0.25,"speakerColors":bool=true}"##;
 
 pub(crate) fn commands() -> Vec<CommandSpec> {
+    use crate::shorts_fx as fx;
+    const WORDS: &str = r#"{"words":"bonk, what"|[str],"effect":"punch|shake|glitch|flash"|[..]}"#;
     vec![
         spec("shorts.verticalFill", "Vertical Short: Crop to Fill", VERTICAL, |s, p| vertical(s, p, Reframe::Fill, "shorts.verticalFill")),
         spec("shorts.verticalFollow", "Vertical Short: Follow Subject", VERTICAL, |s, p| vertical(s, p, Reframe::Follow, "shorts.verticalFollow")),
         spec("shorts.verticalBlur", "Vertical Short: Blurred Background", VERTICAL, |s, p| vertical(s, p, Reframe::Blur, "shorts.verticalBlur")),
         spec("shorts.stackRight", "Stacked Layout: Model on Right", STACK, |s, p| stacked(s, p, Side::Right, "shorts.stackRight")),
         spec("shorts.stackLeft", "Stacked Layout: Model on Left", STACK, |s, p| stacked(s, p, Side::Left, "shorts.stackLeft")),
+        spec("shorts.trackModel", "Track Model", r#"{"clips":[id]?,"wait":bool=false}"#, crate::shorts_track::track_model),
         spec("shorts.punchIn", "Punch In at Playhead", r#"{"clips":[id]?,"time":ticks?,"zoom":percent=125,"seconds":f=1}"#, punch_in),
         spec("shorts.shake", "Camera Shake at Playhead", r#"{"clips":[id]?,"time":ticks?,"amount":px=40,"seconds":f=0.5}"#, shake),
+        spec("shorts.glitch", "Glitch Hit at Playhead", r#"{"clips":[id]?,"time":ticks?,"amount":px=40,"seconds":f=0.35}"#, glitch),
         spec("shorts.flash", "Impact Flash at Playhead", r##"{"time":ticks?,"seconds":f=0.3,"color":"#ffffff"?}"##, flash),
+        spec("shorts.speedRamp", "Speed Ramp at Playhead", r#"{"time":ticks?,"speed":percent=35,"seconds":f=1,"ramp":seconds=0.2}"#, fx::speed_ramp),
+        spec("shorts.freezeFrame", "Freeze Frame at Playhead", r#"{"time":ticks?,"seconds":f=1.5,"zoom":percent=115,"flash":bool=true}"#, fx::freeze_frame),
+        spec(
+            "shorts.hype",
+            "Find Hype Moments",
+            r#"{"effects":["punch","shake","glitch","flash"]=["punch","shake"],"sensitivity":dB=9,"maxMoments":n=8,"minGap":seconds=2,"markersOnly":bool=false}"#,
+            fx::hype,
+        ),
+        spec(
+            "shorts.chatHighlights",
+            "Find Chat Highlights…",
+            r#"{"path":str,"clip":id?,"offset":seconds=0,"window":seconds=5,"maxMoments":n=10}"#,
+            crate::chat::highlights,
+        ),
+        spec("shorts.zoomCuts", "Zoom on Every Cut", r#"{"zoom":percent=112}"#, fx::zoom_cuts),
+        spec(
+            "shorts.beatSync",
+            "Effects on the Beat",
+            r#"{"clips":[id]?,"effects":["pulse","flash","shake","punch","glitch"]=["pulse"],"every":n=2,"amount":percent=105}"#,
+            fx::beat_sync,
+        ),
+        spec("shorts.keywordEffects", "Effects on Words…", WORDS, fx::keyword_effects),
+        spec("shorts.hookTitle", "Hook Title…", r##"{"text":str="WAIT FOR IT…","seconds":f=2.5,"color":"#ffd60a"?,"time":ticks?}"##, fx::hook_title),
+        spec(
+            "shorts.chatOverlay",
+            "Chat Overlay…",
+            r#"{"path":str,"clip":id?,"offset":seconds=0,"lines":n=6,"maxChars":n=34,"position":"left|right"}"#,
+            crate::chat::overlay,
+        ),
+        spec("shorts.progressBar", "Progress Bar", r##"{"color":"#ffd60a"?,"position":"bottom|top","height":px?}"##, fx::progress_bar),
         spec("shorts.captionsPop", "Word Captions: Pop", CAPTIONS, |s, p| word_captions(s, p, CapStyle::Pop, "shorts.captionsPop")),
         spec("shorts.captionsKaraoke", "Word Captions: Karaoke", CAPTIONS, |s, p| word_captions(s, p, CapStyle::Karaoke, "shorts.captionsKaraoke")),
         spec("shorts.captionsOneWord", "Word Captions: One Word", CAPTIONS, |s, p| word_captions(s, p, CapStyle::OneWord, "shorts.captionsOneWord")),
+        spec("shorts.bleep", "Bleep Swear Words", r#"{"words":[str]|str?,"extraWords":[str]|str?,"hz":f=1000,"beepDb":f=-14}"#, fx::bleep),
+        spec("shorts.duckMusic", "Duck Music Under Speech", r#"{"clips":[id]?,"reduceDb":f=-15}"#, fx::duck_music),
+        spec("shorts.soundEffect", "Sound Effect at Playhead", r#"{"item":itemId?,"time":ticks?}"#, fx::sound_effect),
     ]
 }
 
@@ -61,14 +98,14 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
 
 /// A clip that shows a picture of its own (media, a nested sequence, a subclip), as opposed to
 /// a graphic or an adjustment layer.
-fn is_footage(pr: &Project, it: &TrackItem) -> bool {
+pub(crate) fn is_footage(pr: &Project, it: &TrackItem) -> bool {
     pr.item(it.item).is_some_and(|i| matches!(i.kind, ItemKind::Media(_) | ItemKind::Sequence(_) | ItemKind::Subclip { .. }))
         && filmcraft_render::source_size(pr, it.item).is_some()
 }
 
 /// The picture sizes of a clip: storage pixels (for the anchor and crop) and display size in
 /// sequence pixels (for the scale).
-fn picture_sizes(pr: &Project, it: &TrackItem, par: (u32, u32)) -> Option<((f64, f64), (f64, f64))> {
+pub(crate) fn picture_sizes(pr: &Project, it: &TrackItem, par: (u32, u32)) -> Option<((f64, f64), (f64, f64))> {
     let (w, h) = filmcraft_render::source_size(pr, it.item)?;
     let (dw, dh) = pr.conformed_source_size(it.item, par)?;
     let ok = |v: f64| v.is_finite() && v >= 1.0;
@@ -76,12 +113,12 @@ fn picture_sizes(pr: &Project, it: &TrackItem, par: (u32, u32)) -> Option<((f64,
 }
 
 /// Index of the lowest video track holding footage: the "main picture" track.
-fn base_track(pr: &Project, q: &Sequence) -> Option<usize> {
+pub(crate) fn base_track(pr: &Project, q: &Sequence) -> Option<usize> {
     q.video_tracks.iter().position(|t| t.items.iter().any(|i| is_footage(pr, i)))
 }
 
 /// Set a parameter to a static value, dropping its keyframes (adds the parameter if missing).
-fn set_static(e: &mut EffectInstance, k: &str, v: ParamValue) {
+pub(crate) fn set_static(e: &mut EffectInstance, k: &str, v: ParamValue) {
     match e.params.get_mut(k) {
         Some(prm) => {
             prm.keyframes.clear();
@@ -95,7 +132,7 @@ fn set_static(e: &mut EffectInstance, k: &str, v: ParamValue) {
 
 /// Motion that shows the clip with `scale` (percent) and the picture point `anchor` (storage
 /// pixels) at frame point `position`. Turns Scale to Frame Size off.
-fn set_motion(it: &mut TrackItem, scale: f64, position: (f64, f64), anchor: (f64, f64)) {
+pub(crate) fn set_motion(it: &mut TrackItem, scale: f64, position: (f64, f64), anchor: (f64, f64)) {
     it.scale_to_frame = false;
     if let Some(m) = it.effect_mut("motion") {
         set_static(m, "scale", ParamValue::Float(scale.clamp(0.0, 10_000.0)));
@@ -112,7 +149,7 @@ fn standard_slot(it: &TrackItem) -> usize {
 }
 
 /// Put a new instance of effect `id` on the clip at `at` (clamped to the standard effects).
-fn insert_effect(it: &mut TrackItem, id: &str, at: Option<usize>) -> Option<usize> {
+pub(crate) fn insert_effect(it: &mut TrackItem, id: &str, at: Option<usize>) -> Option<usize> {
     let def = filmcraft_project::find_effect(id)?;
     let slot = standard_slot(it);
     let at = at.unwrap_or(slot).min(slot);
@@ -121,7 +158,7 @@ fn insert_effect(it: &mut TrackItem, id: &str, at: Option<usize>) -> Option<usiz
 }
 
 /// Put a new instance of effect `id` at the end of the clip's standard effects, with `params` set.
-fn add_effect(it: &mut TrackItem, id: &str, params: Vec<(&str, ParamValue)>) {
+pub(crate) fn add_effect(it: &mut TrackItem, id: &str, params: Vec<(&str, ParamValue)>) {
     if let Some(e) = insert_effect(it, id, None).and_then(|i| it.effects.get_mut(i)) {
         for (k, v) in params {
             set_static(e, k, v);
@@ -130,7 +167,7 @@ fn add_effect(it: &mut TrackItem, id: &str, params: Vec<(&str, ParamValue)>) {
 }
 
 /// The clip's Crop effect (added at the end of its standard effects if it has none).
-fn crop_mut(it: &mut TrackItem) -> Option<&mut EffectInstance> {
+pub(crate) fn crop_mut(it: &mut TrackItem) -> Option<&mut EffectInstance> {
     let idx = match it.effects.iter().position(|e| e.effect == "crop") {
         Some(i) => i,
         None => insert_effect(it, "crop", None)?,
@@ -138,7 +175,7 @@ fn crop_mut(it: &mut TrackItem) -> Option<&mut EffectInstance> {
     it.effects.get_mut(idx)
 }
 
-fn set_crop(it: &mut TrackItem, crop: [f64; 4]) {
+pub(crate) fn set_crop(it: &mut TrackItem, crop: [f64; 4]) {
     if let Some(c) = crop_mut(it) {
         for (k, v) in ["left", "top", "right", "bottom"].into_iter().zip(crop) {
             set_static(c, k, ParamValue::Float(v));
@@ -156,7 +193,7 @@ fn apply_placement(it: &mut TrackItem, pl: &Placement, storage: (f64, f64), disp
 }
 
 /// A copy of a clip for another track: new id, no links or group, `suffix` added to its name.
-fn copy_clip(it: &TrackItem, id: u64, suffix: &str) -> TrackItem {
+pub(crate) fn copy_clip(it: &TrackItem, id: u64, suffix: &str) -> TrackItem {
     let mut c = it.clone();
     c.id = ClipId(id);
     c.link = None;
@@ -165,12 +202,12 @@ fn copy_clip(it: &TrackItem, id: u64, suffix: &str) -> TrackItem {
     c
 }
 
-fn new_video_track(id: u64, name: &str) -> Track {
+pub(crate) fn new_video_track(id: u64, name: &str) -> Track {
     Track::new(TrackId(id), TrackKind::Video, name.to_string())
 }
 
 /// A colour parameter: `"#rrggbb"`, `"#rrggbbaa"` or `[r, g, b(, a)]` (0..255), as 0..1 floats.
-fn color_p(p: &Value, k: &str, cmd: &str) -> Result<Option<[f32; 4]>> {
+pub(crate) fn color_p(p: &Value, k: &str, cmd: &str) -> Result<Option<[f32; 4]>> {
     let Some(v) = p.get(k) else { return Ok(None) };
     let rgba: Option<[u8; 4]> = if let Some(a) = v.as_array() {
         let c: Vec<u8> = a.iter().filter_map(|x| x.as_f64().filter(|f| f.is_finite()).map(|f| f.clamp(0.0, 255.0) as u8)).collect();
@@ -195,7 +232,7 @@ fn color_p(p: &Value, k: &str, cmd: &str) -> Result<Option<[f32; 4]>> {
 }
 
 /// A finite number parameter within `lo..=hi` (default when missing).
-fn num_p(p: &Value, k: &str, default: f64, lo: f64, hi: f64, cmd: &str) -> Result<f64> {
+pub(crate) fn num_p(p: &Value, k: &str, default: f64, lo: f64, hi: f64, cmd: &str) -> Result<f64> {
     match p.get(k) {
         None | Some(Value::Null) => Ok(default),
         Some(_) => match f64_p(p, k) {
@@ -432,138 +469,281 @@ fn stacked(s: &mut Session, p: &Value, side: Side, cmd: &str) -> Result<Value> {
 
 /// Clips the punch effects apply to at sequence time `t`: the selected video clips under it,
 /// or else every footage clip under it.
-fn clips_at(s: &Session, p: &Value, t: Tick) -> Vec<ClipId> {
+pub(crate) fn clips_at(s: &Session, p: &Value, t: Tick) -> Vec<ClipId> {
     let Some(q) = s.active_sequence() else { return Vec::new() };
     let covers = |c: &ClipId| q.video_tracks.iter().any(|tr| tr.item(*c).is_some_and(|i| i.range().contains(t)));
     let picked: Vec<ClipId> = clips_p(s, p).into_iter().filter(covers).collect();
     if !picked.is_empty() {
         return picked;
     }
+    footage_at(s, t)
+}
+
+/// Every footage clip under sequence time `t`.
+pub(crate) fn footage_at(s: &Session, t: Tick) -> Vec<ClipId> {
+    let Some(q) = s.active_sequence() else { return Vec::new() };
     q.video_tracks.iter().flat_map(|tr| tr.items.iter()).filter(|i| i.range().contains(t) && is_footage(&s.project, i)).map(|i| i.id).collect()
 }
 
 /// `t` plus `frames` frames of `rate`.
-fn after(t: Tick, frames: i64, frame: Tick) -> Tick {
+pub(crate) fn after(t: Tick, frames: i64, frame: Tick) -> Tick {
     Tick(t.0.saturating_add(frame.0.saturating_mul(frames)))
 }
 
-fn put(prm: &mut Param, t: Tick, v: f64) {
+pub(crate) fn put(prm: &mut Param, t: Tick, v: f64) {
     prm.put_keyframe(t, ParamValue::Float(v));
 }
 
-fn punch_in(s: &mut Session, p: &Value) -> Result<Value> {
-    const CMD: &str = "shorts.punchIn";
-    let t = time_p(s, p, "").unwrap_or_else(|| s.playhead());
-    let zoom = num_p(p, "zoom", 125.0, 101.0, 400.0, CMD)? / 100.0;
-    let hold = Tick::from_seconds_f64(num_p(p, "seconds", 1.0, 0.1, 60.0, CMD)?);
-    let clips = clips_at(s, p, t);
-    if clips.is_empty() {
-        return Err(bad(CMD, "move the playhead over a video clip"));
-    }
+/// A one-shot effect that lands on a moment of the clips under it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum Hit {
+    /// Zoom in over 3 frames, hold, ease back over 4 (`zoom`: 1.25 = 125 %).
+    Punch { zoom: f64, hold: Tick },
+    /// Camera Shake that hits at the moment and settles to nothing.
+    Shake { amount: f64, dur: Tick },
+    /// RGB Split and Wave Warp bursts with a small shake.
+    Glitch { amount: f64, dur: Tick },
+    /// A quick zoom bump that settles back over 5 frames (`amount`: 1.05 = 105 %), for beats.
+    Pulse { amount: f64 },
+}
+
+/// Apply `hits` at each moment (sequence time, clips under it) as one undo step labelled
+/// `label`. Returns how many clip-moments were changed.
+pub(crate) fn apply_hits(s: &mut Session, label: &str, moments: &[(Tick, Vec<ClipId>)], hits: &[Hit]) -> Result<usize> {
+    let all: Vec<ClipId> = moments.iter().flat_map(|(_, c)| c.iter().copied()).collect();
     let sizes: BTreeMap<ClipId, (f64, f64)> = s
         .active_sequence()
         .map(|q| {
             q.video_tracks
                 .iter()
                 .flat_map(|tr| tr.items.iter())
-                .filter(|i| clips.contains(&i.id))
+                .filter(|i| all.contains(&i.id))
                 .filter_map(|i| filmcraft_render::source_size(&s.project, i.item).map(|(w, h)| (i.id, (f64::from(w), f64::from(h)))))
                 .collect()
         })
         .unwrap_or_default();
-    let n = s.edit_sequence("Punch In", |q, _, _| {
-        let frame = q.settings.frame_rate.frame_duration().max(Tick(1));
-        let t = q.settings.frame_rate.snap(t);
+    s.edit_sequence(label, |q, _, _| {
+        let rate = q.settings.frame_rate;
+        let frame = rate.frame_duration().max(Tick(1));
         let mut n = 0;
-        for tr in q.video_tracks.iter_mut() {
-            for it in tr.items.iter_mut().filter(|i| clips.contains(&i.id)) {
-                let last = Tick(it.end().0.saturating_sub(1));
-                // snap in over 3 frames, hold, ease back over 4 (all inside the clip)
-                let seq_times = [t, after(t, 3, frame).min(last), Tick(after(t, 3, frame).0.saturating_add(hold.0)).min(last)];
-                let seq_times = [seq_times[0], seq_times[1], seq_times[2], after(seq_times[2], 4, frame).min(last)];
-                let mt = seq_times.map(|x| it.effect_time_at(x));
-                let anchor = it.effect("motion").and_then(|m| m.params.get("anchor")).map(|a| a.vec2_at(mt[0]));
-                let Some(m) = it.effect_mut("motion") else { continue };
-                let Some(scale) = m.params.get_mut("scale") else { continue };
-                let base = mt.map(|x| scale.f64_at(x));
-                put(scale, mt[0], base[0]);
-                put(scale, mt[1], base[1] * zoom);
-                put(scale, mt[2], base[2] * zoom);
-                put(scale, mt[3], base[3]);
-                // a cropped pane (stacked layout) zooms inside its own edges
-                let size = sizes.get(&it.id).copied();
-                if let (Some(a), Some((w, h))) = (anchor, size)
-                    && let Some(c) = it.effects.iter_mut().find(|e| e.effect == "crop")
-                {
-                    let keys = ["left", "top", "right", "bottom"];
-                    let crop = keys.map(|k| c.params.get(k).map_or(0.0, |prm| prm.f64_at(mt[0])));
-                    let animated = keys.iter().any(|k| c.params.get(*k).is_some_and(Param::is_animated));
-                    if !animated && crop.iter().any(|v| *v > 0.0) {
-                        let zoomed = sh::zoomed_crop(crop, (a.x / w * 100.0, a.y / h * 100.0), zoom);
-                        for ((k, c0), cz) in keys.into_iter().zip(crop).zip(zoomed) {
-                            if let Some(prm) = c.params.get_mut(k) {
-                                put(prm, mt[0], c0);
-                                put(prm, mt[1], cz);
-                                put(prm, mt[2], cz);
-                                put(prm, mt[3], c0);
-                            }
+        for (t, clips) in moments {
+            let t = rate.snap(*t);
+            for tr in q.video_tracks.iter_mut() {
+                for it in tr.items.iter_mut().filter(|i| clips.contains(&i.id) && i.range().contains(t)) {
+                    for hit in hits {
+                        match *hit {
+                            Hit::Punch { zoom, hold } => punch_clip(it, t, zoom, hold, frame, sizes.get(&it.id).copied()),
+                            Hit::Shake { amount, dur } => shake_clip(it, t, dur, amount, frame),
+                            Hit::Glitch { amount, dur } => glitch_clip(it, t, dur, amount, frame),
+                            Hit::Pulse { amount } => pulse_clip(it, t, amount, frame),
                         }
                     }
+                    n += 1;
                 }
-                n += 1;
             }
         }
         Ok(n)
-    })?;
+    })
+}
+
+/// Keyframe Motion ▸ Scale for a punch-in at `t` (and the crop of a stacked pane, which zooms
+/// inside its own edges). `size` is the clip's picture size in storage pixels.
+fn punch_clip(it: &mut TrackItem, t: Tick, zoom: f64, hold: Tick, frame: Tick, size: Option<(f64, f64)>) {
+    let last = Tick(it.end().0.saturating_sub(1));
+    // snap in over 3 frames, hold, ease back over 4 (all inside the clip)
+    let t1 = after(t, 3, frame).min(last);
+    let t2 = Tick(after(t, 3, frame).0.saturating_add(hold.0)).min(last);
+    let t3 = after(t2, 4, frame).min(last);
+    let mt = [t, t1, t2, t3].map(|x| it.effect_time_at(x));
+    let anchor = it.effect("motion").and_then(|m| m.params.get("anchor")).map(|a| a.vec2_at(mt[0]));
+    let Some(scale) = it.effect_mut("motion").and_then(|m| m.params.get_mut("scale")) else { return };
+    let base = mt.map(|x| scale.f64_at(x));
+    put(scale, mt[0], base[0]);
+    put(scale, mt[1], base[1] * zoom);
+    put(scale, mt[2], base[2] * zoom);
+    put(scale, mt[3], base[3]);
+    if let (Some(a), Some((w, h))) = (anchor, size)
+        && let Some(c) = it.effects.iter_mut().find(|e| e.effect == "crop")
+    {
+        let keys = ["left", "top", "right", "bottom"];
+        let crop = keys.map(|k| c.params.get(k).map_or(0.0, |prm| prm.f64_at(mt[0])));
+        let animated = keys.iter().any(|k| c.params.get(*k).is_some_and(Param::is_animated));
+        if !animated && crop.iter().any(|v| *v > 0.0) {
+            let zoomed = sh::zoomed_crop(crop, (a.x / w * 100.0, a.y / h * 100.0), zoom);
+            for ((k, c0), cz) in keys.into_iter().zip(crop).zip(zoomed) {
+                if let Some(prm) = c.params.get_mut(k) {
+                    put(prm, mt[0], c0);
+                    put(prm, mt[1], cz);
+                    put(prm, mt[2], cz);
+                    put(prm, mt[3], c0);
+                }
+            }
+        }
+    }
+}
+
+/// A zoom bump on Motion ▸ Scale at `t`: up in one frame, back over four.
+fn pulse_clip(it: &mut TrackItem, t: Tick, amount: f64, frame: Tick) {
+    let last = Tick(it.end().0.saturating_sub(1));
+    let mt = [t, after(t, 1, frame).min(last), after(t, 5, frame).min(last)].map(|x| it.effect_time_at(x));
+    let Some(scale) = it.effect_mut("motion").and_then(|m| m.params.get_mut("scale")) else { return };
+    let base = mt.map(|x| scale.f64_at(x));
+    put(scale, mt[0], base[0]);
+    put(scale, mt[1], base[1] * amount);
+    put(scale, mt[2], base[2]);
+}
+
+/// The clip's first instance of effect `id`, or a new one at the front of its effects (so it
+/// works on the picture before any crop) with `statics` set.
+pub(crate) fn effect_at_front(it: &mut TrackItem, id: &str, statics: &[(&str, ParamValue)]) -> Option<usize> {
+    if let Some(i) = it.effects.iter().position(|e| e.effect == id) {
+        return Some(i);
+    }
+    let i = insert_effect(it, id, Some(0))?;
+    if let Some(e) = it.effects.get_mut(i) {
+        for (k, v) in statics {
+            set_static(e, k, v.clone());
+        }
+    }
+    Some(i)
+}
+
+/// Keyframe `param` of effect instance `idx` through `(sequence time, value)` points, with the
+/// value back to `rest` the frame before `t` (when the clip has one).
+fn burst(it: &mut TrackItem, idx: usize, param: &str, t: Tick, frame: Tick, rest: f64, points: &[(Tick, f64)]) {
+    let last = Tick(it.end().0.saturating_sub(1));
+    let before = (t > it.start).then(|| it.effect_time_at(Tick(t.0.saturating_sub(frame.0))));
+    let pts: Vec<(Tick, f64)> = points.iter().map(|(x, v)| (it.effect_time_at((*x).min(last)), *v)).collect();
+    let Some(prm) = it.effects.get_mut(idx).and_then(|e| e.params.get_mut(param)) else { return };
+    if let Some(b) = before {
+        put(prm, b, rest);
+    }
+    for (x, v) in pts {
+        put(prm, x, v);
+    }
+}
+
+/// A Camera Shake that hits at `t` and settles to nothing after `dur`.
+fn shake_clip(it: &mut TrackItem, t: Tick, dur: Tick, amount: f64, frame: Tick) {
+    let statics = [
+        ("amount", ParamValue::Float(0.0)),
+        ("rotation", ParamValue::Float(0.0)),
+        ("zoom", ParamValue::Float(0.0)),
+        ("frequency", ParamValue::Float(14.0)),
+        ("motion_blur", ParamValue::Float(40.0)),
+    ];
+    let Some(idx) = effect_at_front(it, "camera_shake", &statics) else { return };
+    let end = Tick(t.0.saturating_add(dur.0));
+    for (k, peak) in [("amount", amount), ("rotation", (amount / 20.0).min(10.0)), ("zoom", (amount / 6.0).min(30.0))] {
+        burst(it, idx, k, t, frame, 0.0, &[(t, peak), (end, 0.0)]);
+    }
+}
+
+/// A digital glitch at `t`: stuttering RGB Split and Wave Warp, and a small shake.
+fn glitch_clip(it: &mut TrackItem, t: Tick, dur: Tick, amount: f64, frame: Tick) {
+    let end = Tick(t.0.saturating_add(dur.0));
+    let split = [("amount", ParamValue::Float(0.0))];
+    if let Some(idx) = effect_at_front(it, "rgb_split", &split) {
+        let pts = [(t, amount), (after(t, 2, frame), amount * 0.25), (after(t, 4, frame), amount * 1.2), (after(t, 6, frame), amount * 0.5), (end, 0.0)];
+        burst(it, idx, "amount", t, frame, 0.0, &pts);
+    }
+    let warp = [("height", ParamValue::Float(0.0)), ("width", ParamValue::Float(90.0)), ("speed", ParamValue::Float(12.0))];
+    if let Some(idx) = effect_at_front(it, "wave_warp", &warp) {
+        let pts = [(t, amount * 0.6), (after(t, 3, frame), 0.0), (after(t, 5, frame), amount * 0.4), (end, 0.0)];
+        burst(it, idx, "height", t, frame, 0.0, &pts);
+    }
+    shake_clip(it, t, dur, amount * 0.6, frame);
+}
+
+/// Shared by the single-moment commands: the moment (time param or playhead) and its clips.
+fn moment(s: &Session, p: &Value, cmd: &str) -> Result<(Tick, Vec<ClipId>)> {
+    let t = time_p(s, p, "").unwrap_or_else(|| s.playhead());
+    let clips = clips_at(s, p, t);
+    if clips.is_empty() {
+        return Err(bad(cmd, "move the playhead over a video clip"));
+    }
+    Ok((t, clips))
+}
+
+fn punch_in(s: &mut Session, p: &Value) -> Result<Value> {
+    const CMD: &str = "shorts.punchIn";
+    let zoom = num_p(p, "zoom", 125.0, 101.0, 400.0, CMD)? / 100.0;
+    let hold = Tick::from_seconds_f64(num_p(p, "seconds", 1.0, 0.1, 60.0, CMD)?);
+    let m = moment(s, p, CMD)?;
+    let n = apply_hits(s, "Punch In", &[m], &[Hit::Punch { zoom, hold }])?;
     Ok(json!({"clips": n}))
 }
 
 fn shake(s: &mut Session, p: &Value) -> Result<Value> {
     const CMD: &str = "shorts.shake";
-    let t = time_p(s, p, "").unwrap_or_else(|| s.playhead());
     let amount = num_p(p, "amount", 40.0, 1.0, 1000.0, CMD)?;
     let dur = Tick::from_seconds_f64(num_p(p, "seconds", 0.5, 0.05, 30.0, CMD)?);
-    let clips = clips_at(s, p, t);
-    if clips.is_empty() {
-        return Err(bad(CMD, "move the playhead over a video clip"));
-    }
-    let n = s.edit_sequence("Camera Shake", |q, _, _| {
-        let frame = q.settings.frame_rate.frame_duration().max(Tick(1));
-        let t = q.settings.frame_rate.snap(t);
-        let mut n = 0;
-        for tr in q.video_tracks.iter_mut() {
-            for it in tr.items.iter_mut().filter(|i| clips.contains(&i.id)) {
-                let last = Tick(it.end().0.saturating_sub(1));
-                let before = (t > it.start).then(|| it.effect_time_at(Tick(t.0.saturating_sub(frame.0))));
-                let (m0, m1) = (it.effect_time_at(t), it.effect_time_at(Tick(t.0.saturating_add(dur.0)).min(last)));
-                // the shake moves the picture before any crop, so a stacked pane keeps its edges
-                let idx = match it.effects.iter().position(|e| e.effect == "camera_shake") {
-                    Some(i) => i,
-                    None => {
-                        let Some(i) = insert_effect(it, "camera_shake", Some(0)) else { continue };
-                        if let Some(e) = it.effects.get_mut(i) {
-                            for (k, v) in [("amount", 0.0), ("rotation", 0.0), ("zoom", 0.0), ("frequency", 14.0), ("motion_blur", 40.0)] {
-                                set_static(e, k, ParamValue::Float(v));
-                            }
-                        }
-                        i
-                    }
-                };
-                let Some(e) = it.effects.get_mut(idx) else { continue };
-                for (k, peak) in [("amount", amount), ("rotation", (amount / 20.0).min(10.0)), ("zoom", (amount / 6.0).min(30.0))] {
-                    let Some(prm) = e.params.get_mut(k) else { continue };
-                    if let Some(b) = before {
-                        put(prm, b, 0.0);
-                    }
-                    put(prm, m0, peak);
-                    put(prm, m1, 0.0);
-                }
-                n += 1;
-            }
-        }
-        Ok(n)
-    })?;
+    let m = moment(s, p, CMD)?;
+    let n = apply_hits(s, "Camera Shake", &[m], &[Hit::Shake { amount, dur }])?;
     Ok(json!({"clips": n}))
+}
+
+fn glitch(s: &mut Session, p: &Value) -> Result<Value> {
+    const CMD: &str = "shorts.glitch";
+    let amount = num_p(p, "amount", 40.0, 1.0, 500.0, CMD)?;
+    let dur = Tick::from_seconds_f64(num_p(p, "seconds", 0.35, 0.05, 10.0, CMD)?);
+    let m = moment(s, p, CMD)?;
+    let n = apply_hits(s, "Glitch Hit", &[m], &[Hit::Glitch { amount, dur }])?;
+    Ok(json!({"clips": n}))
+}
+
+/// A full-frame colour shape layer fading out over `dur` (graphic clips start at media time 0,
+/// so the keyframe times are clip-relative).
+pub(crate) fn flash_layer(w: u32, h: u32, color: [f32; 4], dur: Tick, peak: f64) -> EffectInstance {
+    let (fw, fh) = (f64::from(w), f64::from(h));
+    let mut layer = filmcraft_project::graphic::new_shape_layer(0, Vec2::new(fw / 2.0, fh / 2.0), Vec2::new(fw + 8.0, fh + 8.0), Vec::new());
+    set_static(&mut layer, "name", ParamValue::Text("Flash".into()));
+    set_static(&mut layer, "fill", ParamValue::Bool(true));
+    set_static(&mut layer, "fill_color", ParamValue::Color(color));
+    set_static(&mut layer, "stroke", ParamValue::Bool(false));
+    let peak = if peak.is_finite() { peak.clamp(0.0, 100.0) } else { 90.0 };
+    let mut fade = Param::new(ParamValue::Float(peak));
+    fade.keyframes = vec![
+        Keyframe::new(Tick::ZERO, ParamValue::Float(peak)),
+        Keyframe { interp: filmcraft_project::Interpolation::EaseOut, ..Keyframe::new(Tick(dur.0 / 3), ParamValue::Float(peak * 0.6)) },
+        Keyframe::new(dur, ParamValue::Float(0.0)),
+    ];
+    layer.params.insert("opacity".into(), fade);
+    layer
+}
+
+/// Graphic clips to place on one new video track at the top: (start, duration, name, layers).
+pub(crate) type GraphicClip = (Tick, Tick, String, Vec<EffectInstance>);
+
+/// Put `clips` (sorted, non-overlapping) on a new top video track named `track` as one undo
+/// step. Returns the new track's index.
+pub(crate) fn place_graphic_track(s: &mut Session, label: &str, track: &str, clips: Vec<GraphicClip>) -> Result<usize> {
+    let seq_id = s.state.active_sequence.ok_or(EngineError::NoSequence)?;
+    let (w, h, rate) = {
+        let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
+        (q.settings.width, q.settings.height, q.settings.frame_rate)
+    };
+    s.edit(label, |pr, st| {
+        let src = crate::graphics::graphic_source(pr, w, h, rate);
+        let mut items = Vec::with_capacity(clips.len());
+        for (start, dur, name, layers) in clips {
+            let Some(mut ti) = pr.make_track_item(src, TrackKind::Video, start, TimeRange::new(Tick::ZERO, dur), rate) else { continue };
+            ti.name = name;
+            for mut layer in layers {
+                filmcraft_project::resolve_auto_points(&mut layer, (w, h), (w, h));
+                ti.effects.push(layer);
+            }
+            items.push(ti);
+        }
+        let mut t = new_video_track(pr.alloc_id(), track);
+        t.items = items;
+        t.sort();
+        let q = pr.sequence_mut(seq_id).ok_or(EngineError::NoSequence)?;
+        q.video_tracks.push(t);
+        q.check().map_err(EngineError::Other)?;
+        st.selection.clear();
+        Ok(q.video_tracks.len().saturating_sub(1))
+    })
 }
 
 fn flash(s: &mut Session, p: &Value) -> Result<Value> {
@@ -573,20 +753,7 @@ fn flash(s: &mut Session, p: &Value) -> Result<Value> {
     let secs = num_p(p, "seconds", 0.3, 0.05, 10.0, CMD)?;
     let color = color_p(p, "color", CMD)?.unwrap_or([1.0, 1.0, 1.0, 1.0]);
     let dur = rate.snap_nearest(Tick::from_seconds_f64(secs)).max(rate.frame_duration());
-    let (fw, fh) = (f64::from(w), f64::from(h));
-    let mut layer = filmcraft_project::graphic::new_shape_layer(0, Vec2::new(fw / 2.0, fh / 2.0), Vec2::new(fw + 8.0, fh + 8.0), Vec::new());
-    set_static(&mut layer, "name", ParamValue::Text("Flash".into()));
-    set_static(&mut layer, "fill", ParamValue::Bool(true));
-    set_static(&mut layer, "fill_color", ParamValue::Color(color));
-    set_static(&mut layer, "stroke", ParamValue::Bool(false));
-    // graphic clips start at media time 0, so keyframe times are clip-relative
-    let mut fade = Param::new(ParamValue::Float(90.0));
-    fade.keyframes = vec![
-        Keyframe::new(Tick::ZERO, ParamValue::Float(90.0)),
-        Keyframe { interp: filmcraft_project::Interpolation::EaseOut, ..Keyframe::new(Tick(dur.0 / 3), ParamValue::Float(55.0)) },
-        Keyframe::new(dur, ParamValue::Float(0.0)),
-    ];
-    layer.params.insert("opacity".into(), fade);
+    let layer = flash_layer(w, h, color, dur, 90.0);
     let mut placement = json!({});
     if let Some(t) = p.get("time") {
         placement["time"] = t.clone();
@@ -623,6 +790,8 @@ fn word_captions(s: &mut Session, p: &Value, style: CapStyle, cmd: &str) -> Resu
     if words.is_empty() {
         return Err(bad(cmd, "no transcript yet: run Sequence ▸ Transcript ▸ Transcribe… first so FilmCraft knows when each word is spoken"));
     }
+    // words already bleeped show masked ("F***")
+    let words = crate::shorts_fx::mask_bleeped(s, words);
     let max_words = match style {
         CapStyle::OneWord => 1,
         _ => num_p(p, "maxWords", 3.0, 1.0, 12.0, cmd)?.round() as usize,
@@ -640,6 +809,26 @@ fn word_captions(s: &mut Session, p: &Value, style: CapStyle, cmd: &str) -> Resu
     let default_size = if vertical { fw * 0.085 } else { fh * 0.075 } * if style == CapStyle::OneWord { 1.4 } else { 1.0 };
     let size = num_p(p, "size", default_size, 4.0, 2000.0, cmd)?;
     let uppercase = bool_p(p, "uppercase").unwrap_or(true);
+    // collab streams: each speaker's captions in their own colour
+    let mut speakers: Vec<&str> = Vec::new();
+    for w in &words {
+        if let Some(sp) = w.speaker.as_deref()
+            && !speakers.contains(&sp)
+        {
+            speakers.push(sp);
+        }
+    }
+    let by_speaker = bool_p(p, "speakerColors").unwrap_or(true) && speakers.len() > 1;
+    let fill_of = |word: usize| -> [f32; 4] {
+        if !by_speaker {
+            return fill;
+        }
+        let k = words.get(word).and_then(|w| w.speaker.as_deref()).and_then(|sp| speakers.iter().position(|x| *x == sp)).unwrap_or(0);
+        match k % SPEAKER_COLORS.len() {
+            0 => fill,
+            i => SPEAKER_COLORS.get(i).copied().unwrap_or(fill),
+        }
+    };
     let position = match p.get("position") {
         None => Vec2::new(fw / 2.0, fh * if vertical { 0.70 } else { 0.86 }),
         Some(_) => crate::graphics::vec2_p(p, "position")
@@ -657,7 +846,7 @@ fn word_captions(s: &mut Session, p: &Value, style: CapStyle, cmd: &str) -> Resu
     }
     let frame = rate.frame_duration().max(Tick(1));
     // one text layer per span
-    let mut clips: Vec<(Tick, Tick, String, EffectInstance)> = Vec::with_capacity(spans.len());
+    let mut clips: Vec<GraphicClip> = Vec::with_capacity(spans.len());
     let mut prev_beat = None;
     for sp in &spans {
         let Some(beat) = beats.get(sp.beat).cloned() else { continue };
@@ -668,13 +857,14 @@ fn word_captions(s: &mut Session, p: &Value, style: CapStyle, cmd: &str) -> Resu
         let chars = text.chars().count().max(1) as f64;
         let fitted = size.min(fw * 0.92 / (chars * EM_PER_CHAR)).max(4.0);
         let mut layer = filmcraft_project::graphic::new_text_layer(&text, position, fitted);
+        let base = fill_of(beat.start);
         for (k, v) in [
             ("name", ParamValue::Text(text.clone())),
             ("font", ParamValue::Text(font.clone())),
             ("font_style", ParamValue::Text(font_style.clone())),
             ("align", ParamValue::Choice(1)),
             ("fill", ParamValue::Bool(true)),
-            ("fill_color", ParamValue::Color(if style == CapStyle::OneWord { highlight_or_white(sp.word, fill, highlight) } else { fill })),
+            ("fill_color", ParamValue::Color(if style == CapStyle::OneWord { highlight_or_white(sp.word, base, highlight) } else { base })),
             ("stroke", ParamValue::Bool(true)),
             ("stroke_color", ParamValue::Color([0.0, 0.0, 0.0, 1.0])),
             ("stroke_width", ParamValue::Float(fitted * 0.14)),
@@ -715,37 +905,20 @@ fn word_captions(s: &mut Session, p: &Value, style: CapStyle, cmd: &str) -> Resu
             ];
             layer.params.insert("scale".into(), scale);
         }
-        clips.push((sp.start, Tick(sp.end.0.saturating_sub(sp.start.0)), text, layer));
+        clips.push((sp.start, Tick(sp.end.0.saturating_sub(sp.start.0)), text, vec![layer]));
     }
-    let seq_id = s.state.active_sequence.ok_or(EngineError::NoSequence)?;
     let label = match style {
         CapStyle::Pop => "Word Captions: Pop",
         CapStyle::Karaoke => "Word Captions: Karaoke",
         CapStyle::OneWord => "Word Captions: One Word",
     };
     let n = clips.len();
-    let track = s.edit(label, |pr, st| {
-        let src = crate::graphics::graphic_source(pr, w, h, rate);
-        let mut items = Vec::with_capacity(clips.len());
-        for (start, dur, text, layer) in clips {
-            let Some(mut ti) = pr.make_track_item(src, TrackKind::Video, start, TimeRange::new(Tick::ZERO, dur), rate) else { continue };
-            ti.name = text;
-            let mut layer = layer;
-            filmcraft_project::resolve_auto_points(&mut layer, (w, h), (w, h));
-            ti.effects.push(layer);
-            items.push(ti);
-        }
-        let mut t = new_video_track(pr.alloc_id(), "Word Captions");
-        t.items = items;
-        t.sort();
-        let q = pr.sequence_mut(seq_id).ok_or(EngineError::NoSequence)?;
-        q.video_tracks.push(t);
-        q.check().map_err(EngineError::Other)?;
-        st.selection.clear();
-        Ok(q.video_tracks.len().saturating_sub(1))
-    })?;
+    let track = place_graphic_track(s, label, "Word Captions", clips)?;
     Ok(json!({"clips": n, "beats": beats.len(), "track": track}))
 }
+
+/// Caption colours for the second, third and fourth speaker (the first uses `color`).
+const SPEAKER_COLORS: [[f32; 4]; 4] = [[1.0, 1.0, 1.0, 1.0], [0.5, 0.86, 1.0, 1.0], [1.0, 0.56, 0.85, 1.0], [0.72, 1.0, 0.48, 1.0]];
 
 /// One Word style alternates white and the highlight colour so consecutive words read apart.
 fn highlight_or_white(word: usize, fill: [f32; 4], highlight: [f32; 4]) -> [f32; 4] {

@@ -13,6 +13,7 @@
 pub mod aaf_omf;
 pub mod autosave;
 pub mod captions;
+pub mod chat;
 pub mod clip_ops;
 pub mod color;
 pub mod commands;
@@ -51,6 +52,8 @@ pub mod settings;
 pub mod shortcut_presets;
 pub mod shortcuts;
 pub mod shorts;
+pub mod shorts_fx;
+pub mod shorts_track;
 pub mod source_monitor;
 pub mod sync;
 pub mod transcript;
@@ -424,6 +427,8 @@ pub struct Session {
     pub media_jobs: Vec<proxies::PendingJob>,
     /// Mask tracking jobs whose keyframes are still being written.
     pub mask_jobs: Vec<masks::PendingTrack>,
+    /// Sequence ▸ Shorts ▸ Track Model jobs whose keyframes are applied when they finish.
+    pub model_jobs: Vec<shorts_track::PendingModel>,
     /// Scene Edit Detection jobs whose results are applied when they finish.
     pub scene_jobs: Vec<scene_detect::PendingScene>,
     /// Effect presets (built-in + the user's, persisted in the data directory).
@@ -529,6 +534,7 @@ impl Session {
             offline: Default::default(),
             media_jobs: Vec::new(),
             mask_jobs: Vec::new(),
+            model_jobs: Vec::new(),
             scene_jobs: Vec::new(),
             presets: Default::default(),
             export_presets: Default::default(),
@@ -624,6 +630,7 @@ impl Session {
     pub fn poll_persistence(&mut self) {
         proxies::poll(self);
         masks::poll(self);
+        shorts_track::poll(self);
         scene_detect::poll(self);
         export_tools::pump_queue(self, false);
         panels::log_jobs(self);
@@ -1304,6 +1311,8 @@ mod sequence_tools_tests;
 mod settings_tests;
 #[cfg(test)]
 mod shortcuts_tests;
+#[cfg(test)]
+mod shorts_fx_tests;
 #[cfg(test)]
 mod shorts_tests;
 #[cfg(test)]
