@@ -587,6 +587,9 @@ pub struct UiState {
     /// `panels::menu_dialogs`.
     #[serde(default)]
     pub extras: crate::panels::menu_dialogs::Extras,
+    /// Sequence ▸ Shorts ▸ Layout… and Word Captions… windows. See `panels::shorts_dialogs`.
+    #[serde(default)]
+    pub shorts: crate::panels::shorts_dialogs::ShortsUi,
     /// Essential Graphics ▸ Browse and the graphics template / Replace Fonts dialogs. See
     /// `panels::graphics_templates`.
     #[serde(default)]
@@ -1016,6 +1019,7 @@ impl Default for UiState {
             workspace_dialog: None,
             clip_dialog: None,
             extras: Default::default(),
+            shorts: Default::default(),
             gfx_templates: Default::default(),
             panels: Default::default(),
             keys: Default::default(),

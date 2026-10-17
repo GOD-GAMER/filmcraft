@@ -174,7 +174,7 @@ fn caption_texts(s: &Session, r: &Value) -> Vec<String> {
 }
 
 fn bleeps(s: &Session) -> Vec<TrackItem> {
-    seq(s).audio_tracks.iter().flat_map(|t| t.items.iter()).filter(|i| i.name == "Bleep").cloned().collect()
+    seq(s).audio_tracks.iter().flat_map(|t| t.items.iter()).filter(|i| i.name == "Bleep" || i.name.starts_with("Bleep: ")).cloned().collect()
 }
 
 #[test]
@@ -192,6 +192,7 @@ fn bleep_mutes_the_words_adds_beeps_and_masks_captions() {
     let r = s.execute("shorts.bleep", json!({})).unwrap();
     assert_eq!(r["bleeped"], 2, "{r}");
     assert_eq!(bleeps(&s).len(), 2);
+    assert!(bleeps(&s).iter().any(|b| b.name == "Bleep: fuck"), "each beep names its word");
     assert_eq!(seq(&s).audio_tracks.len(), audio_tracks + 1);
     // the word's own sound is silent in the middle of the word, and as it was elsewhere
     let mid = w.start + Tick((w.end.0 - w.start.0) / 2);
@@ -205,7 +206,8 @@ fn bleep_mutes_the_words_adds_beeps_and_masks_captions() {
     // captions made after the bleep come out masked too
     let after = s.execute("shorts.captionsKaraoke", json!({"maxChars": 40})).unwrap();
     let texts = caption_texts(&s, &after);
-    assert!(texts.iter().any(|t| t.contains("S***?")), "{texts:?}");
+    assert!(texts.iter().any(|t| t.contains("S***")), "{texts:?}");
+    assert!(texts.iter().all(|t| !t.contains("T**")), "only the swears are masked, not a word next to one: {texts:?}");
 
     // a word list of your own
     s.execute("edit.undo", json!({})).unwrap();
@@ -221,7 +223,7 @@ fn bleep_mutes_the_words_adds_beeps_and_masks_captions() {
 #[test]
 fn captions_color_each_speaker() {
     let mut s = transcribed();
-    let r = s.execute("shorts.captionsPop", json!({"maxChars": 40})).unwrap();
+    let r = s.execute("shorts.captionsPop", json!({"maxChars": 40, "speakerColors": true})).unwrap();
     let q = seq(&s);
     let items = &q.video_tracks[r["track"].as_u64().unwrap() as usize].items;
     let fill = |i: &TrackItem| i.effects.last().unwrap().param("fill_color").unwrap().value.clone();
@@ -266,7 +268,7 @@ fn glitch_bursts_sit_before_the_crop() {
     assert_eq!(r["clips"], 2);
     let it = clip(&s, c.id);
     let pos = |id: &str| it.effects.iter().position(|e| e.effect == id).unwrap();
-    assert!(pos("rgb_split") < pos("crop") && pos("wave_warp") < pos("crop") && pos("camera_shake") < pos("crop"));
+    assert!(pos("rgb_split") < pos("rounded_crop") && pos("wave_warp") < pos("rounded_crop") && pos("camera_shake") < pos("rounded_crop"));
     let amount = it.effect("rgb_split").unwrap().param("amount").unwrap();
     assert!(amount.keyframes.len() >= 5 && amount.keyframes.last().unwrap().value.as_f64() == Some(0.0));
     render(&s, t + sec(0.1));
@@ -317,7 +319,7 @@ fn freeze_frame_holds_desaturates_and_ripples() {
     assert!(q.duration() > dur_before, "later clips moved right");
     // the stacked model pane holds as well (no hole in the bottom half)
     let holds = q.video_tracks.iter().flat_map(|t| t.items.iter()).filter(|i| i.start == seg.start && i.frame_hold.is_some()).count();
-    assert_eq!(holds, 2);
+    assert_eq!(holds, 3, "gameplay, model and blurred background");
     // the flash
     assert!(q.video_tracks.iter().flat_map(|t| t.items.iter()).any(|i| i.name == "Flash" && i.start == seg.start));
     q.check().unwrap();
@@ -576,7 +578,7 @@ fn track_model_keyframes_the_pane_inside_the_picture() {
     let it = clip(&s, model);
     let anchor = it.effect("motion").unwrap().param("anchor").unwrap();
     assert!(anchor.keyframes.len() >= 2, "{}", anchor.keyframes.len());
-    let crop = it.effect("crop").unwrap();
+    let crop = it.effect("rounded_crop").unwrap();
     for k in ["left", "top", "right", "bottom"] {
         assert!(crop.param(k).unwrap().keyframes.iter().all(|kf| (0.0..=100.0).contains(&kf.value.as_f64().unwrap())), "{k}");
     }

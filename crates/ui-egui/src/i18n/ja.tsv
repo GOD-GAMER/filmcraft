@@ -3642,3 +3642,55 @@
 	Find Chat Highlights…	チャットの盛り上がりを検出…
 	Effects on the Beat	ビートに合わせてエフェクト
 	Chat Overlay…	チャットオーバーレイ…
+	Across:	横位置:
+	Background:	背景:
+	Blurred	ぼかし
+	Border colour:	枠線の色:
+	Border:	枠線:
+	Box behind the words	文字の後ろにボックス
+	Box colour:	ボックスの色:
+	Box height:	ボックスの高さ:
+	Box opacity:	ボックスの不透明度:
+	Box roundness:	ボックスの角丸:
+	Box width:	ボックスの幅:
+	Capitals	大文字
+	Colour per speaker	話者ごとに色分け
+	Colours	色
+	Corner roundness:	角の丸み:
+	Down:	縦位置:
+	Drag a box to move it, or its edges to resize it.	ボックスをドラッグで移動、端をドラッグでサイズ変更します。
+	Fix words:	単語の修正:
+	Font:	フォント:
+	Gameplay	ゲーム画面
+	Highlight box	ハイライトボックス
+	Highlight:	ハイライト:
+	Highlighted text:	ハイライト文字:
+	Karaoke	カラオケ
+	Layout	レイアウト
+	Letters per line:	1行の文字数:
+	Lines:	行数:
+	Model in the stream:	配信内のモデル:
+	No transcript yet: run Sequence ▸ Transcript ▸ Transcribe… first	文字起こしがまだありません。先に「シーケンス ▸ 文字起こし ▸ 文字起こし…」を実行してください
+	One word	1語ずつ
+	Outline colour:	縁取りの色:
+	Outline:	縁取り:
+	Pan:	パン:
+	Phrases appear:	フレーズの出方:
+	Picture in picture	ピクチャーインピクチャー
+	Placement and motion	配置と動き
+	Plain	プレーン
+	Pop	ポップ
+	Punctuation	句読点
+	Put the stream recording on the timeline to see it here.	配信の録画をタイムラインに置くとここに表示されます。
+	Shadow:	影:
+	Size:	サイズ:
+	Slide up	上にスライド
+	Spoken word bigger by:	話している単語の拡大:
+	Stay after speech:	発話後の表示時間:
+	Style:	スタイル:
+	Width kept:	残す幅:
+	Word Captions	単語キャプション
+	Words at once:	一度に表示する単語:
+	Layout…	レイアウト…
+	Word Captions…	単語キャプション…
+	Word Captions: Highlight Box	単語キャプション: ハイライトボックス

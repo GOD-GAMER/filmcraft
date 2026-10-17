@@ -52,7 +52,9 @@ pub mod settings;
 pub mod shortcut_presets;
 pub mod shortcuts;
 pub mod shorts;
+pub mod shorts_captions;
 pub mod shorts_fx;
+pub mod shorts_layout;
 pub mod shorts_track;
 pub mod source_monitor;
 pub mod sync;
@@ -362,6 +364,12 @@ pub struct EditorState {
     /// The last Edit ▸ Find… (Find Next continues it).
     #[serde(default)]
     pub find: Option<project_tools::FindState>,
+    /// The values Sequence ▸ Shorts ▸ Layout… last applied (the dialog opens with them).
+    #[serde(default)]
+    pub shorts_layout: Option<serde_json::Value>,
+    /// The options Sequence ▸ Shorts ▸ Word Captions… last applied.
+    #[serde(default)]
+    pub shorts_captions: Option<serde_json::Value>,
 }
 
 /// Events for frontends (drained each frame).

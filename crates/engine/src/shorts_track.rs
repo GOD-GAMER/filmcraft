@@ -36,7 +36,7 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 fn crop_of(it: &TrackItem) -> Option<[f64; 4]> {
-    let c = it.effects.iter().find(|e| e.effect == "crop")?;
+    let c = crate::shorts_layout::pane_crop_index(it).and_then(|i| it.effects.get(i))?;
     let v = ["left", "top", "right", "bottom"].map(|k| c.params.get(k).and_then(|p| p.value.as_f64()).unwrap_or(0.0));
     v.iter().any(|x| *x > 0.0).then_some(v)
 }
@@ -254,7 +254,7 @@ pub fn poll(s: &mut Session) {
                     a.put_keyframe(*t, ParamValue::Vec2(*v));
                 }
             }
-            if let Some(c) = it.effects.iter_mut().find(|e| e.effect == "crop") {
+            if let Some(c) = crate::shorts_layout::pane_crop_index(it).and_then(|i| it.effects.get_mut(i)) {
                 for (j, k) in ["left", "top", "right", "bottom"].into_iter().enumerate() {
                     if let Some(prm) = c.params.get_mut(k) {
                         prm.keyframes.clear();

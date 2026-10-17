@@ -12,11 +12,11 @@ A typical clip:
    said). Optionally remove filler words and pauses from the Transcript menu.
 3. **Sequence ▸ Shorts ▸ Vertical Short: …** makes a 1080 x 1920 copy of the sequence and opens
    it. The 16:9 original is left as it was.
-4. Optionally **Stacked Layout** for gameplay on top and the model below.
+4. **Layout…** for the gameplay and the model (drag their areas over a frame of the stream).
 5. **Zoom on Every Cut** for jump-cut pacing, then **Find Hype Moments** to punch in on the
    loud reactions, or put the playhead on a moment and use the effects at the playhead.
 6. **Bleep Swear Words** if the clip needs it, and **Duck Music Under Speech** for a music bed.
-7. **Word Captions**, a **Hook Title…** and a **Progress Bar** last, so they sit on top.
+7. **Word Captions…**, a **Hook Title…** and a **Progress Bar** last, so they sit on top.
 8. Export with the **Social Vertical 1080×1920** preset.
 
 ## Vertical Short
@@ -31,28 +31,45 @@ Parameters: `{"width": 1080, "height": 1920, "name": "…"}`. The footage on the
 that has footage is reframed; titles and overlays on other tracks keep their place relative to
 the frame.
 
-## Stacked Layout
+## Layout
 
-**Model on Right** / **Model on Left** splits the frame: gameplay in the top pane and the
-streamer's model (or camera) in the bottom pane, both cut from the same recording. The model
-copies go on a new track above and are selected, so their Crop and Motion can be adjusted right
-away in Effect Controls.
+**Layout…** arranges a widescreen stream recording in the vertical frame and opens a window to
+adjust it; the Program monitor shows every change as you make it (OK keeps it, Cancel undoes it,
+and the whole session in the window is one undo step).
 
-It works on the selected clips, or on every clip of the main picture track when nothing is
-selected. Parameters (`shorts.stackRight`, `shorts.stackLeft`):
+- **Presets:** **Stack** (the default) keeps all of the gameplay beside the model at full width,
+  with the model below in a box of its own shape (about a third of the frame tall); **Split**
+  gives the gameplay the top 60 % and the model the bottom 40 % (full width); **Picture in
+  picture** makes the gameplay larger with the model in a bordered box over its lower corner.
+  **Model in the stream** says which side of the recording the model is on.
+- **Picker:** a frame of the recording with the **Gameplay** (green) and **Model** (pink) areas.
+  Drag a box to move it, or its edges to resize it. Trim the gameplay box's bottom edge to hide
+  captions or overlays the stream burned in.
+- **Gameplay:** *Width kept* (how much of the gameplay's width stays; less zooms in and makes the
+  pane taller), *Pan*, *Down* (its place on screen), *Corner roundness*.
+- **Model:** *Box width*, *Box height*, *Across*, *Down*, *Corner roundness*, *Border* and its
+  colour.
+- **Background:** a blurred, darkened copy of the recording behind both, or black.
 
-- `split`: the top pane's share of the height, 0.2 to 0.8 (default 0.5);
-- `model`, `game`: the part of the recording each pane shows, as `[x0, y0, x1, y1]` fractions of
-  the picture (defaults: the model is the outer 40 % of the width, from a quarter of the way
-  down; the gameplay is the other side).
+Applying a layout again replaces the previous one (its model and background copies). The model
+copies go on a **Model** track above the gameplay, the blurred copy on **Layout Background**
+below it. Both panes use **Rounded Crop**, so they can also be adjusted in Effect Controls.
 
-Each pane is filled edge to edge and never shows past the edge of the recording.
+**Stacked Layout: Model on Right / Left** apply the Split preset straight away.
+
+| Command | Parameters |
+|---|---|
+| `shorts.layout`, `shorts.stackRight`, `shorts.stackLeft` | `{"preset": "stack\|split\|pip", "side": "right\|left", "game": [x0, y0, x1, y1], "gameWidth": 0.3–1, "gamePan": −1–1, "gameY": 0–1, "model": [x0, y0, x1, y1], "modelWidth", "modelHeight", "modelX", "modelY" (fractions of the frame), "corner", "gameCorner", "border" (pixels at 1080 wide), "borderColor", "background": "blur\|black", "live": bool}` |
+
+Regions are fractions of the recording (`[0.70, 0.36, 1, 1]` is the right 30 % from a little
+over a third of the way down, where many streams put the model, under a chat window).
 
 **Track Model** (`shorts.trackModel`, `{"clips": [id]?, "wait": false}`) makes the model pane
-follow the streamer: the part of the recording the pane shows is tracked frame by frame in the
-background (see the Progress panel), and when it finishes the pane's Anchor Point and Crop get
-smoothed keyframes that follow the movement without ever leaving the picture. It works on the
-selected cropped clips, or on the model panes under the playhead.
+follow a streamer who moves around (a camera): the part of the recording the pane shows is
+tracked frame by frame in the background (see the Progress panel), and when it finishes the
+pane's Anchor Point and Crop get smoothed keyframes that follow the movement without ever
+leaving the picture. A VTuber model stays in one place in the stream layout, so it does not need
+tracking; tracking it follows the gameplay moving behind the model instead.
 
 ## Effects at the playhead
 
@@ -92,25 +109,44 @@ They also take `"time"` (ticks) instead of the playhead and `"clips"` instead of
 
 ## Word Captions
 
-Animated captions from the transcript: one graphic clip per spoken word on a new **Word
-Captions** track at the top, in bold capitals with a thick outline and a shadow.
+Animated captions from the transcript: one graphic clip per spoken word on a **Word Captions**
+track at the top. **Word Captions…** opens a window with every option and previews each change
+in the Program monitor (OK keeps it, Cancel undoes it). Applying again replaces the previous
+Word Captions. The quick items (Pop, Karaoke, Highlight Box, One Word) apply a style straight
+away with its defaults.
 
-| Style | Look | Command |
-|---|---|---|
-| Pop | A few words at a time; the word being spoken turns yellow and grows a little. Each phrase pops in. | `shorts.captionsPop` |
-| Karaoke | A few words at a time; words light up green as they are spoken. | `shorts.captionsKaraoke` |
-| One Word | One big word at a time, each popping in; every third word is highlighted. | `shorts.captionsOneWord` |
+| Style | Look |
+|---|---|
+| Pop | A few words at a time; the word being spoken changes colour and grows a little. |
+| Karaoke | Words light up as they are spoken. |
+| Highlight box | A coloured box sits behind the word being spoken. |
+| One word | One big word at a time, each bouncing in. |
+| Plain | Phrases only, no highlight. |
+
+Options:
+
+- **Text:** font and style (any font installed on the computer), size, words at once, letters per
+  line, lines (1–3), capitals, punctuation (off by default), colour per speaker (off by default:
+  speaker detection can mistake one voice, singing especially, for several), and **Fix words**
+  (`nero=Neuro, kot=cot`) for words the transcription got wrong.
+- **Colours:** text, highlight (the box's colour in Highlight box), highlighted text, how much
+  bigger the spoken word is, outline width and colour, shadow, a box behind the whole phrase
+  (colour, opacity) and the boxes' roundness.
+- **Placement and motion:** across and down (by default just over the bottom edge of a layout's
+  gameplay pane, or 70 % down), how phrases appear (pop, bounce, fade, slide up, none) and how
+  long they stay after the speech.
 
 A phrase ends when it is full, at a pause of half a second, at the end of a sentence and when
-the speaker changes. When the transcript has more than one speaker (a collab), each speaker's
-captions get their own colour (`"speakerColors": false` turns that off). Bleeped words show
-masked (`F***`). Long phrases are shrunk to fit the frame. Each clip is an ordinary graphic,
-so the font, colours and position can be changed afterwards (Graphics, Properties panel).
+the speaker changes. Phrases too wide for the frame shrink to fit. Bleeped words show masked
+(`F***`). Each clip is an ordinary graphic, so it can be changed by hand afterwards too (a later
+Word Captions… replaces those changes).
 
-Parameters: `maxWords` (default 3), `maxChars` (default 16 in a vertical frame, 28 otherwise),
-`color`, `highlight`, `font` (default Inter), `fontStyle` (default Bold), `size`, `position`
-(`[x, y]` frame pixels; default 70 % of the way down a vertical frame), `uppercase` (default
-true) and `hold` (seconds the last word of a phrase stays up, default 0.25).
+Command: `shorts.captions` (and `shorts.captionsPop`, `shorts.captionsKaraoke`,
+`shorts.captionsBox`, `shorts.captionsOneWord`) with `{"style", "maxWords", "maxChars", "lines",
+"font", "fontStyle", "size" (pixels at 1080 wide), "uppercase", "punctuation", "color",
+"highlight", "highlightText", "grow", "outline", "outlineColor", "shadow", "background",
+"backgroundColor", "backgroundOpacity", "radius", "x", "y", "animation", "hold",
+"speakerColors", "fixes", "replace", "live"}`.
 
 ## Sound
 
@@ -121,7 +157,13 @@ true) and `hold` (seconds the last word of a phrase stays up, default 0.25).
 | Sound Effect at Playhead | Drops the sound selected in the Project panel at the playhead on the first free audio track (one is added if needed), without moving anything. Import your sound effects first. | `shorts.soundEffect` `{"item": id?}` |
 
 `words` replaces the built-in list (common strong swears; mild words such as "damn" are left
-alone); `extraWords` adds to it.
+alone); `extraWords` adds to it. Words the transcription already starred out (`f***`) count
+too. Each beep is padded by `padding` seconds (0.06) either side, since word timings from speech
+recognition can be a little early or late, and is named after the words it covers ("Bleep:
+shit").
+
+Word Captions, Bleep Swear Words and Effects on Words need a transcript, which needs a build
+with speech recognition (the `whisper` feature; the fork's Windows test build has it).
 
 ## Chat replays
 

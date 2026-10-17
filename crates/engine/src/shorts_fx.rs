@@ -34,6 +34,9 @@ const MAX_HYPE_SECONDS: f64 = 3.0 * 3600.0;
 const HOP_S: f64 = 0.05;
 /// The name every bleep clip gets; Word Captions masks the words under one.
 const BLEEP: &str = "Bleep";
+/// A bleep clip's name lists the words it covers after this ("Bleep: fuck, shit"), so captions
+/// mask those and not a short word the padding reaches into.
+const BLEEP_PREFIX: &str = "Bleep: ";
 
 // ---------------------------------------------------------------------------------------------
 // Find Hype Moments
@@ -219,8 +222,11 @@ pub(crate) fn zoom_cuts(s: &mut Session, p: &Value) -> Result<Value> {
     let zoom = num_p(p, "zoom", 112.0, 101.0, 300.0, CMD)? / 100.0;
     let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
     let base = crate::shorts::base_track(&s.project, q).ok_or_else(|| bad(CMD, "the sequence has no video footage"))?;
-    let mut clips: Vec<(Tick, ClipId)> =
-        q.video_tracks.get(base).map(|t| t.items.iter().filter(|i| is_footage(&s.project, i)).map(|i| (i.start, i.id)).collect()).unwrap_or_default();
+    let mut clips: Vec<(Tick, ClipId)> = q
+        .video_tracks
+        .get(base)
+        .map(|t| t.items.iter().filter(|i| is_footage(&s.project, i) && !crate::shorts::is_copy(i)).map(|i| (i.start, i.id)).collect())
+        .unwrap_or_default();
     clips.sort();
     if clips.len() < 2 {
         return Err(bad(CMD, "there are no cuts yet: cut the clip first (Transcript ▸ Remove Pauses makes jump cuts)"));
@@ -237,7 +243,7 @@ pub(crate) fn zoom_cuts(s: &mut Session, p: &Value) -> Result<Value> {
                 });
             }
             // a stacked pane zooms inside its crop
-            if let Some(c) = it.effects.iter_mut().find(|e| e.effect == "crop") {
+            if let Some(c) = crate::shorts_layout::pane_crop_index(it).and_then(|i| it.effects.get_mut(i)) {
                 let keys = ["left", "top", "right", "bottom"];
                 if !keys.iter().any(|k| c.params.get(*k).is_some_and(Param::is_animated)) {
                     let crop = keys.map(|k| c.params.get(k).and_then(|x| x.value.as_f64()).unwrap_or(0.0));
@@ -504,20 +510,31 @@ pub(crate) fn progress_bar(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// Whether a clip is one of the beeps Bleep Swear Words made.
 fn is_bleep(pr: &filmcraft_project::Project, it: &TrackItem) -> bool {
-    it.name == BLEEP
+    (it.name == BLEEP || it.name.starts_with(BLEEP_PREFIX))
         && pr.item(it.item).is_some_and(|i| matches!(&i.kind, ItemKind::Media(m) if matches!(m.media, MediaRef::Generator(Generator::Tone { .. }))))
 }
 
 /// `words` with the ones under a bleep masked ("F***"), for Word Captions.
 pub(crate) fn mask_bleeped(s: &Session, mut words: Vec<SeqWord>) -> Vec<SeqWord> {
     let Some(q) = s.active_sequence() else { return words };
-    let bleeps: Vec<TimeRange> = q.audio_tracks.iter().flat_map(|t| t.items.iter()).filter(|i| is_bleep(&s.project, i)).map(TrackItem::range).collect();
+    // (range, the words it covers; empty: any word under it)
+    let bleeps: Vec<(TimeRange, Vec<String>)> = q
+        .audio_tracks
+        .iter()
+        .flat_map(|t| t.items.iter())
+        .filter(|i| is_bleep(&s.project, i))
+        .map(|i| {
+            let list = i.name.strip_prefix(BLEEP_PREFIX).map(|l| l.split(',').map(sh::normalize_word).filter(|w| !w.is_empty()).collect()).unwrap_or_default();
+            (i.range(), list)
+        })
+        .collect();
     if bleeps.is_empty() {
         return words;
     }
     for w in &mut words {
         let mid = Tick(w.start.0.saturating_add(w.end.0.saturating_sub(w.start.0) / 2));
-        if bleeps.iter().any(|r| r.contains(mid)) {
+        let key = sh::normalize_word(&w.text);
+        if bleeps.iter().any(|(r, list)| r.contains(mid) && (list.is_empty() || list.contains(&key))) {
             w.text = sh::mask_word(&w.text);
         }
     }
@@ -558,7 +575,8 @@ pub(crate) fn bleep(s: &mut Session, p: &Value) -> Result<Value> {
         }
     };
     let hit = |w: &SeqWord| target(&w.text);
-    let pad = Tick::from_seconds_f64(0.03);
+    // word timings from speech recognition can be a few hundredths of a second off
+    let pad = Tick::from_seconds_f64(num_p(p, "padding", 0.06, 0.0, 0.5, CMD)?);
     let found: Vec<&SeqWord> = words.iter().filter(|w| hit(w)).collect();
     if found.is_empty() {
         return Err(bad(CMD, "no words to bleep in the transcript"));
@@ -603,7 +621,15 @@ pub(crate) fn bleep(s: &mut Session, p: &Value) -> Result<Value> {
         let mut beeps = Vec::new();
         for r in &ranges {
             let Some(mut ti) = pr.make_track_item(tone, TrackKind::Audio, r.start, TimeRange::new(Tick::ZERO, r.duration), rate) else { continue };
-            ti.name = BLEEP.into();
+            // the words this beep covers
+            let mut covered: Vec<String> = found
+                .iter()
+                .filter(|w| r.contains(Tick(w.start.0.saturating_add(w.end.0.saturating_sub(w.start.0) / 2))))
+                .map(|w| sh::normalize_word(&w.text))
+                .filter(|w| !w.is_empty())
+                .collect();
+            covered.dedup();
+            ti.name = if covered.is_empty() { BLEEP.into() } else { format!("{BLEEP_PREFIX}{}", covered.join(", ")) };
             beeps.push(ti);
         }
         let track_id = TrackId(pr.alloc_id());

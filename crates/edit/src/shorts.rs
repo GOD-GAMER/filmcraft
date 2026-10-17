@@ -354,6 +354,11 @@ const SWEAR_WORDS: &[&str] = &[
 /// Whether `word` should be bleeped: it matches the built-in list of strong swear words, or one
 /// of `extra` (whole words, compared after [`normalize_word`]).
 pub fn is_swear(word: &str, extra: &[String]) -> bool {
+    // already censored by the transcriber ("f***", "sh*t"): a letter, then a star
+    let t = word.trim();
+    if t.chars().next().is_some_and(char::is_alphabetic) && t.contains('*') {
+        return true;
+    }
     let w = normalize_word(word);
     if w.is_empty() {
         return false;
@@ -605,6 +610,8 @@ mod tests {
             assert!(!is_swear(w, &[]), "{w}");
         }
         assert!(is_swear("Bonk!", &["bonk".into()]));
+        // censored by the transcriber
+        assert!(is_swear("f***ing", &[]) && is_swear("S**t!", &[]) && !is_swear("*", &[]) && !is_swear("**", &[]));
         assert_eq!(mask_word("Fucking!"), "F******!");
         assert_eq!(mask_word("SHIT"), "S***");
         assert_eq!(mask_word("ünïcödé"), "ü******");

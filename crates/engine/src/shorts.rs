@@ -15,16 +15,14 @@
 
 use std::collections::BTreeMap;
 
-use filmcraft_edit::shorts::{self as sh, BeatRules, Placement, Rect};
+use filmcraft_edit::shorts as sh;
 use filmcraft_geom::Vec2;
-use filmcraft_project::{
-    CharStyle, ClipId, EffectInstance, ItemKind, Keyframe, LayerExtra, Param, ParamValue, Project, Sequence, StyleRun, Track, TrackId, TrackItem, TrackKind,
-};
+use filmcraft_project::{ClipId, EffectInstance, ItemKind, Keyframe, Param, ParamValue, Project, Sequence, Track, TrackId, TrackItem, TrackKind};
 
 use filmcraft_time::{Tick, TimeRange};
 use serde_json::{Value, json};
 
-use crate::commands::{CommandSpec, bad, bool_p, clips_p, f64_p, has_seq, str_p, time_p};
+use crate::commands::{CommandSpec, bad, clips_p, f64_p, has_seq, str_p, time_p};
 use crate::{EngineError, Result, Session};
 
 type Run = fn(&mut Session, &Value) -> Result<Value>;
@@ -36,18 +34,21 @@ fn spec(id: &'static str, label: &'static str, params: &'static str, run: Run) -
 }
 
 const VERTICAL: &str = r#"{"width":u32=1080,"height":u32=1920,"name":str?}"#;
-const STACK: &str = r#"{"clips":[id]?,"split":f=0.5,"model":[x0,y0,x1,y1]?,"game":[x0,y0,x1,y1]?}"#;
-const CAPTIONS: &str = r##"{"maxWords":n=3,"maxChars":n?,"color":"#ffffff"?,"highlight":"#ffd60a"?,"font":"Inter"?,"fontStyle":"Bold"?,"size":f?,"position":[x,y]?,"uppercase":bool=true,"hold":seconds=0.25,"speakerColors":bool=true}"##;
+const LAYOUT: &str = r##"{"clips":[id]?,"preset":"stack|split|pip","side":"right|left","game":[x0,y0,x1,y1]?,"gameWidth":f?,"gamePan":f?,"gameY":f?,"model":[x0,y0,x1,y1]?,"modelWidth":f?,"modelHeight":f?,"modelX":f?,"modelY":f?,"corner":px?,"gameCorner":px?,"border":px?,"borderColor":"#ffffff"?,"background":"blur|black","split":f?,"live":bool?}"##;
+const CAPTIONS: &str = r##"{"style":"pop|karaoke|box|oneWord|plain"?,"maxWords":n=3,"maxChars":n?,"lines":n=1,"font":"Inter"?,"fontStyle":"Bold"?,"size":px?,"uppercase":bool=true,"punctuation":bool=true,"color":"#ffffff"?,"highlight":"#ffd60a"?,"highlightText":"#ffffff"?,"grow":percent?,"outline":percent?,"outlineColor":"#000000"?,"shadow":n?,"background":bool?,"backgroundColor":"#000000"?,"backgroundOpacity":n?,"radius":percent?,"x":f?,"y":f?,"animation":"pop|bounce|fade|slide|none"?,"hold":seconds=0.25,"speakerColors":bool=false,"fixes":"wrong=right, …"?,"replace":bool=true,"live":bool?}"##;
 
 pub(crate) fn commands() -> Vec<CommandSpec> {
+    use crate::shorts_captions as cap;
     use crate::shorts_fx as fx;
+    use crate::shorts_layout as ly;
     const WORDS: &str = r#"{"words":"bonk, what"|[str],"effect":"punch|shake|glitch|flash"|[..]}"#;
     vec![
         spec("shorts.verticalFill", "Vertical Short: Crop to Fill", VERTICAL, |s, p| vertical(s, p, Reframe::Fill, "shorts.verticalFill")),
         spec("shorts.verticalFollow", "Vertical Short: Follow Subject", VERTICAL, |s, p| vertical(s, p, Reframe::Follow, "shorts.verticalFollow")),
         spec("shorts.verticalBlur", "Vertical Short: Blurred Background", VERTICAL, |s, p| vertical(s, p, Reframe::Blur, "shorts.verticalBlur")),
-        spec("shorts.stackRight", "Stacked Layout: Model on Right", STACK, |s, p| stacked(s, p, Side::Right, "shorts.stackRight")),
-        spec("shorts.stackLeft", "Stacked Layout: Model on Left", STACK, |s, p| stacked(s, p, Side::Left, "shorts.stackLeft")),
+        spec("shorts.layout", "Layout…", LAYOUT, |s, p| ly::layout(s, p, (ly::Preset::Stack, ly::Side::Right), "shorts.layout")),
+        spec("shorts.stackRight", "Stacked Layout: Model on Right", LAYOUT, |s, p| ly::layout(s, p, (ly::Preset::Split, ly::Side::Right), "shorts.stackRight")),
+        spec("shorts.stackLeft", "Stacked Layout: Model on Left", LAYOUT, |s, p| ly::layout(s, p, (ly::Preset::Split, ly::Side::Left), "shorts.stackLeft")),
         spec("shorts.trackModel", "Track Model", r#"{"clips":[id]?,"wait":bool=false}"#, crate::shorts_track::track_model),
         spec("shorts.punchIn", "Punch In at Playhead", r#"{"clips":[id]?,"time":ticks?,"zoom":percent=125,"seconds":f=1}"#, punch_in),
         spec("shorts.shake", "Camera Shake at Playhead", r#"{"clips":[id]?,"time":ticks?,"amount":px=40,"seconds":f=0.5}"#, shake),
@@ -83,10 +84,17 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
             crate::chat::overlay,
         ),
         spec("shorts.progressBar", "Progress Bar", r##"{"color":"#ffd60a"?,"position":"bottom|top","height":px?}"##, fx::progress_bar),
-        spec("shorts.captionsPop", "Word Captions: Pop", CAPTIONS, |s, p| word_captions(s, p, CapStyle::Pop, "shorts.captionsPop")),
-        spec("shorts.captionsKaraoke", "Word Captions: Karaoke", CAPTIONS, |s, p| word_captions(s, p, CapStyle::Karaoke, "shorts.captionsKaraoke")),
-        spec("shorts.captionsOneWord", "Word Captions: One Word", CAPTIONS, |s, p| word_captions(s, p, CapStyle::OneWord, "shorts.captionsOneWord")),
-        spec("shorts.bleep", "Bleep Swear Words", r#"{"words":[str]|str?,"extraWords":[str]|str?,"hz":f=1000,"beepDb":f=-14}"#, fx::bleep),
+        spec("shorts.captions", "Word Captions…", CAPTIONS, |s, p| cap::captions(s, p, cap::Style::Pop, "shorts.captions")),
+        spec("shorts.captionsPop", "Word Captions: Pop", CAPTIONS, |s, p| cap::captions(s, p, cap::Style::Pop, "shorts.captionsPop")),
+        spec("shorts.captionsKaraoke", "Word Captions: Karaoke", CAPTIONS, |s, p| cap::captions(s, p, cap::Style::Karaoke, "shorts.captionsKaraoke")),
+        spec("shorts.captionsBox", "Word Captions: Highlight Box", CAPTIONS, |s, p| cap::captions(s, p, cap::Style::Box, "shorts.captionsBox")),
+        spec("shorts.captionsOneWord", "Word Captions: One Word", CAPTIONS, |s, p| cap::captions(s, p, cap::Style::OneWord, "shorts.captionsOneWord")),
+        spec(
+            "shorts.bleep",
+            "Bleep Swear Words",
+            r#"{"words":[str]|str?,"extraWords":[str]|str?,"hz":f=1000,"beepDb":f=-14,"padding":seconds=0.06}"#,
+            fx::bleep,
+        ),
         spec("shorts.duckMusic", "Duck Music Under Speech", r#"{"clips":[id]?,"reduceDb":f=-15}"#, fx::duck_music),
         spec("shorts.soundEffect", "Sound Effect at Playhead", r#"{"item":itemId?,"time":ticks?}"#, fx::sound_effect),
     ]
@@ -114,7 +122,20 @@ pub(crate) fn picture_sizes(pr: &Project, it: &TrackItem, par: (u32, u32)) -> Op
 
 /// Index of the lowest video track holding footage: the "main picture" track.
 pub(crate) fn base_track(pr: &Project, q: &Sequence) -> Option<usize> {
-    q.video_tracks.iter().position(|t| t.items.iter().any(|i| is_footage(pr, i)))
+    q.video_tracks
+        .iter()
+        .position(|t| t.items.iter().any(|i| is_footage(pr, i) && !is_copy(i)))
+        .or_else(|| q.video_tracks.iter().position(|t| t.items.iter().any(|i| is_footage(pr, i))))
+}
+
+/// A copy a layout made (its model pane or blurred background), not the main picture.
+pub(crate) fn is_copy(it: &TrackItem) -> bool {
+    it.name.ends_with(crate::shorts_layout::MODEL_SUFFIX) || it.name.ends_with(crate::shorts_layout::BACKGROUND_SUFFIX) || it.name.ends_with(" (Blurred)")
+}
+
+/// A blurred background copy (effects at a moment leave it alone).
+fn is_background(it: &TrackItem) -> bool {
+    it.name.ends_with(crate::shorts_layout::BACKGROUND_SUFFIX) || it.name.ends_with(" (Blurred)")
 }
 
 /// Set a parameter to a static value, dropping its keyframes (adds the parameter if missing).
@@ -164,32 +185,6 @@ pub(crate) fn add_effect(it: &mut TrackItem, id: &str, params: Vec<(&str, ParamV
             set_static(e, k, v);
         }
     }
-}
-
-/// The clip's Crop effect (added at the end of its standard effects if it has none).
-pub(crate) fn crop_mut(it: &mut TrackItem) -> Option<&mut EffectInstance> {
-    let idx = match it.effects.iter().position(|e| e.effect == "crop") {
-        Some(i) => i,
-        None => insert_effect(it, "crop", None)?,
-    };
-    it.effects.get_mut(idx)
-}
-
-pub(crate) fn set_crop(it: &mut TrackItem, crop: [f64; 4]) {
-    if let Some(c) = crop_mut(it) {
-        for (k, v) in ["left", "top", "right", "bottom"].into_iter().zip(crop) {
-            set_static(c, k, ParamValue::Float(v));
-        }
-        set_static(c, "zoom", ParamValue::Bool(false));
-    }
-}
-
-/// Apply a placement computed on the display size: the anchor goes back to storage pixels.
-fn apply_placement(it: &mut TrackItem, pl: &Placement, storage: (f64, f64), display: (f64, f64)) {
-    let anchor = (pl.anchor.0 * storage.0 / display.0, pl.anchor.1 * storage.1 / display.1);
-    set_motion(it, pl.scale, pl.position, anchor);
-    set_crop(it, pl.crop);
-    it.effects.retain(|e| e.effect != "auto_reframe");
 }
 
 /// A copy of a clip for another track: new id, no links or group, `suffix` added to its name.
@@ -243,7 +238,7 @@ pub(crate) fn num_p(p: &Value, k: &str, default: f64, lo: f64, hi: f64, cmd: &st
 }
 
 /// Fractions `[x0, y0, x1, y1]` (each 0..1) from a parameter.
-fn fractions_p(p: &Value, k: &str, cmd: &str) -> Result<Option<[f64; 4]>> {
+pub(crate) fn fractions_p(p: &Value, k: &str, cmd: &str) -> Result<Option<[f64; 4]>> {
     let Some(v) = p.get(k) else { return Ok(None) };
     let a = v.as_array().filter(|a| a.len() == 4).ok_or_else(|| bad(cmd, format!("`{k}` must be [x0, y0, x1, y1] fractions of the picture")))?;
     let mut f = [0.0; 4];
@@ -375,95 +370,6 @@ fn follow_aspect(ratio: f64) -> Option<u32> {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Stacked layout
-// ---------------------------------------------------------------------------------------------
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Side {
-    Right,
-    Left,
-}
-
-/// Selected footage clips, or else every footage clip on the main picture track.
-fn layout_targets(s: &Session, p: &Value) -> Vec<ClipId> {
-    let Some(q) = s.active_sequence() else { return Vec::new() };
-    let picked: Vec<ClipId> =
-        clips_p(s, p).into_iter().filter(|c| q.video_tracks.iter().any(|t| t.item(*c).is_some_and(|i| is_footage(&s.project, i)))).collect();
-    if !picked.is_empty() {
-        return picked;
-    }
-    base_track(&s.project, q)
-        .and_then(|b| q.video_tracks.get(b))
-        .map(|t| t.items.iter().filter(|i| is_footage(&s.project, i)).map(|i| i.id).collect())
-        .unwrap_or_default()
-}
-
-fn stacked(s: &mut Session, p: &Value, side: Side, cmd: &str) -> Result<Value> {
-    let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
-    let (fw, fh) = (f64::from(q.settings.width), f64::from(q.settings.height));
-    let par = q.settings.par;
-    let split = num_p(p, "split", 0.5, 0.2, 0.8, cmd)?;
-    // where streamers usually sit (a corner-ish model), and the gameplay beside it
-    let model = fractions_p(p, "model", cmd)?.unwrap_or(match side {
-        Side::Right => [0.60, 0.25, 1.0, 1.0],
-        Side::Left => [0.0, 0.25, 0.40, 1.0],
-    });
-    let game = fractions_p(p, "game", cmd)?.unwrap_or(match side {
-        Side::Right => [0.0, 0.0, 0.62, 1.0],
-        Side::Left => [0.38, 0.0, 1.0, 1.0],
-    });
-    let top = Rect::new(0.0, 0.0, fw, (fh * split).round());
-    let bottom = Rect::new(0.0, top.h, fw, fh - top.h);
-    let targets = layout_targets(s, p);
-    // (clip, track index, storage size, display size)
-    let plans: Vec<(ClipId, usize, (f64, f64), (f64, f64))> = targets
-        .iter()
-        .filter_map(|c| {
-            let (ti, it) = q.video_tracks.iter().enumerate().find_map(|(ti, t)| t.item(*c).map(|i| (ti, i)))?;
-            let (storage, display) = picture_sizes(&s.project, it, par)?;
-            Some((*c, ti, storage, display))
-        })
-        .collect();
-    if plans.is_empty() {
-        return Err(bad(cmd, "select the stream clip (or put footage on the timeline) first"));
-    }
-    let above = plans.iter().map(|x| x.1).max().unwrap_or(0).saturating_add(1);
-    let label = match side {
-        Side::Right => "Stacked Layout: Model on Right",
-        Side::Left => "Stacked Layout: Model on Left",
-    };
-    let out = s.edit_sequence(label, |q, ctx, st| {
-        let mut copies = Vec::new();
-        let mut out = Vec::new();
-        for (c, ti, storage, display) in &plans {
-            let (Some(game_pl), Some(model_pl)) = (
-                sh::place_region(*display, Rect::from_fractions(game, display.0, display.1), top),
-                sh::place_region(*display, Rect::from_fractions(model, display.0, display.1), bottom),
-            ) else {
-                continue;
-            };
-            let Some(it) = q.video_tracks.get_mut(*ti).and_then(|t| t.items.iter_mut().find(|i| i.id == *c)) else { continue };
-            apply_placement(it, &game_pl, *storage, *display);
-            let mut m = copy_clip(it, ctx.alloc(), " (Model)");
-            apply_placement(&mut m, &model_pl, *storage, *display);
-            out.push(json!({"clip": c.0, "model": m.id.0}));
-            copies.push(m);
-        }
-        if copies.is_empty() {
-            return Err(bad(cmd, "the selected clips have no picture to lay out"));
-        }
-        let mut t = new_video_track(ctx.alloc(), "Model");
-        t.items = copies;
-        t.sort();
-        let at = above.min(q.video_tracks.len());
-        q.video_tracks.insert(at, t);
-        st.selection = out.iter().filter_map(|o| o["model"].as_u64().map(ClipId)).collect();
-        Ok(json!({"clips": out, "track": at}))
-    })?;
-    Ok(out)
-}
-
-// ---------------------------------------------------------------------------------------------
 // Punch In, Camera Shake, Impact Flash
 // ---------------------------------------------------------------------------------------------
 
@@ -529,7 +435,7 @@ pub(crate) fn apply_hits(s: &mut Session, label: &str, moments: &[(Tick, Vec<Cli
         for (t, clips) in moments {
             let t = rate.snap(*t);
             for tr in q.video_tracks.iter_mut() {
-                for it in tr.items.iter_mut().filter(|i| clips.contains(&i.id) && i.range().contains(t)) {
+                for it in tr.items.iter_mut().filter(|i| clips.contains(&i.id) && i.range().contains(t) && !is_background(i)) {
                     for hit in hits {
                         match *hit {
                             Hit::Punch { zoom, hold } => punch_clip(it, t, zoom, hold, frame, sizes.get(&it.id).copied()),
@@ -563,7 +469,7 @@ fn punch_clip(it: &mut TrackItem, t: Tick, zoom: f64, hold: Tick, frame: Tick, s
     put(scale, mt[2], base[2] * zoom);
     put(scale, mt[3], base[3]);
     if let (Some(a), Some((w, h))) = (anchor, size)
-        && let Some(c) = it.effects.iter_mut().find(|e| e.effect == "crop")
+        && let Some(c) = crate::shorts_layout::pane_crop_index(it).and_then(|i| it.effects.get_mut(i))
     {
         let keys = ["left", "top", "right", "bottom"];
         let crop = keys.map(|k| c.params.get(k).map_or(0.0, |prm| prm.f64_at(mt[0])));
@@ -762,165 +668,4 @@ fn flash(s: &mut Session, p: &Value) -> Result<Value> {
         (crate::graphics::graphic_source(pr, w, h, rate), dur)
     })?;
     Ok(json!({"clip": id.0}))
-}
-
-// ---------------------------------------------------------------------------------------------
-// Word captions
-// ---------------------------------------------------------------------------------------------
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum CapStyle {
-    /// A few words at a time; the word being spoken changes colour and grows a little.
-    Pop,
-    /// A few words at a time; words light up as they are spoken.
-    Karaoke,
-    /// One big word at a time, each popping in.
-    OneWord,
-}
-
-/// Approximate width of bold capitals, in ems, used to keep a caption inside the frame.
-const EM_PER_CHAR: f64 = 0.68;
-
-fn word_captions(s: &mut Session, p: &Value, style: CapStyle, cmd: &str) -> Result<Value> {
-    let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
-    let (w, h, rate) = (q.settings.width, q.settings.height, q.settings.frame_rate);
-    let (fw, fh) = (f64::from(w), f64::from(h));
-    let vertical = fh > fw;
-    let words = crate::transcript::sequence_words(s);
-    if words.is_empty() {
-        return Err(bad(cmd, "no transcript yet: run Sequence ▸ Transcript ▸ Transcribe… first so FilmCraft knows when each word is spoken"));
-    }
-    // words already bleeped show masked ("F***")
-    let words = crate::shorts_fx::mask_bleeped(s, words);
-    let max_words = match style {
-        CapStyle::OneWord => 1,
-        _ => num_p(p, "maxWords", 3.0, 1.0, 12.0, cmd)?.round() as usize,
-    };
-    let max_chars = num_p(p, "maxChars", if vertical { 16.0 } else { 28.0 }, 1.0, 200.0, cmd)?.round() as usize;
-    let rules = BeatRules { max_words, max_chars, ..BeatRules::default() };
-    let hold = Tick::from_seconds_f64(num_p(p, "hold", 0.25, 0.0, 5.0, cmd)?);
-    let fill = color_p(p, "color", cmd)?.unwrap_or([1.0, 1.0, 1.0, 1.0]);
-    let highlight = color_p(p, "highlight", cmd)?.unwrap_or(match style {
-        CapStyle::Karaoke => [0.24, 1.0, 0.43, 1.0],
-        _ => [1.0, 0.84, 0.04, 1.0],
-    });
-    let font = str_p(p, "font").map(str::trim).filter(|f| !f.is_empty()).unwrap_or("Inter").to_string();
-    let font_style = str_p(p, "fontStyle").map(str::trim).filter(|f| !f.is_empty()).unwrap_or("Bold").to_string();
-    let default_size = if vertical { fw * 0.085 } else { fh * 0.075 } * if style == CapStyle::OneWord { 1.4 } else { 1.0 };
-    let size = num_p(p, "size", default_size, 4.0, 2000.0, cmd)?;
-    let uppercase = bool_p(p, "uppercase").unwrap_or(true);
-    // collab streams: each speaker's captions in their own colour
-    let mut speakers: Vec<&str> = Vec::new();
-    for w in &words {
-        if let Some(sp) = w.speaker.as_deref()
-            && !speakers.contains(&sp)
-        {
-            speakers.push(sp);
-        }
-    }
-    let by_speaker = bool_p(p, "speakerColors").unwrap_or(true) && speakers.len() > 1;
-    let fill_of = |word: usize| -> [f32; 4] {
-        if !by_speaker {
-            return fill;
-        }
-        let k = words.get(word).and_then(|w| w.speaker.as_deref()).and_then(|sp| speakers.iter().position(|x| *x == sp)).unwrap_or(0);
-        match k % SPEAKER_COLORS.len() {
-            0 => fill,
-            i => SPEAKER_COLORS.get(i).copied().unwrap_or(fill),
-        }
-    };
-    let position = match p.get("position") {
-        None => Vec2::new(fw / 2.0, fh * if vertical { 0.70 } else { 0.86 }),
-        Some(_) => crate::graphics::vec2_p(p, "position")
-            .filter(|v| v.x.is_finite() && v.y.is_finite())
-            .ok_or_else(|| bad(cmd, "`position` must be [x, y] in frame pixels"))?,
-    };
-
-    let beats = sh::word_beats(&words, &rules);
-    let spans = sh::caption_spans(&words, &beats, hold, rate);
-    if spans.is_empty() {
-        return Err(bad(cmd, "the transcript's words are too short to show"));
-    }
-    if spans.len() > 20_000 {
-        return Err(bad(cmd, "too many words for one caption track (more than 20,000); caption a shorter sequence"));
-    }
-    let frame = rate.frame_duration().max(Tick(1));
-    // one text layer per span
-    let mut clips: Vec<GraphicClip> = Vec::with_capacity(spans.len());
-    let mut prev_beat = None;
-    for sp in &spans {
-        let Some(beat) = beats.get(sp.beat).cloned() else { continue };
-        let (text, ranges) = match style {
-            CapStyle::OneWord => sh::beat_text(&words, sp.word..sp.word.saturating_add(1), uppercase),
-            _ => sh::beat_text(&words, beat.clone(), uppercase),
-        };
-        let chars = text.chars().count().max(1) as f64;
-        let fitted = size.min(fw * 0.92 / (chars * EM_PER_CHAR)).max(4.0);
-        let mut layer = filmcraft_project::graphic::new_text_layer(&text, position, fitted);
-        let base = fill_of(beat.start);
-        for (k, v) in [
-            ("name", ParamValue::Text(text.clone())),
-            ("font", ParamValue::Text(font.clone())),
-            ("font_style", ParamValue::Text(font_style.clone())),
-            ("align", ParamValue::Choice(1)),
-            ("fill", ParamValue::Bool(true)),
-            ("fill_color", ParamValue::Color(if style == CapStyle::OneWord { highlight_or_white(sp.word, base, highlight) } else { base })),
-            ("stroke", ParamValue::Bool(true)),
-            ("stroke_color", ParamValue::Color([0.0, 0.0, 0.0, 1.0])),
-            ("stroke_width", ParamValue::Float(fitted * 0.14)),
-            ("stroke_type", ParamValue::Choice(0)),
-            ("shadow", ParamValue::Bool(true)),
-            ("shadow_opacity", ParamValue::Float(60.0)),
-            ("shadow_distance", ParamValue::Float(fitted * 0.06)),
-            ("shadow_size", ParamValue::Float(fitted * 0.05)),
-            ("shadow_blur", ParamValue::Float(fitted * 0.25)),
-        ] {
-            set_static(&mut layer, k, v);
-        }
-        // the word being spoken (and, for karaoke, the words before it)
-        let k = sp.word.saturating_sub(beat.start);
-        let lit: Vec<std::ops::Range<usize>> = match style {
-            CapStyle::Pop => ranges.get(k).cloned().into_iter().collect(),
-            CapStyle::Karaoke => ranges.iter().take(k.saturating_add(1)).cloned().collect(),
-            CapStyle::OneWord => Vec::new(),
-        };
-        let grow = if style == CapStyle::Pop { Some((fitted * 1.12) as f32) } else { None };
-        let runs: Vec<StyleRun> = lit
-            .into_iter()
-            .map(|r| StyleRun { start: r.start, end: r.end, style: CharStyle { fill: Some(highlight), size: grow, ..CharStyle::default() } })
-            .collect();
-        if !runs.is_empty() {
-            layer.layer = Some(Box::new(LayerExtra { runs, ..LayerExtra::default() }));
-        }
-        // pop in when a new phrase (or, for One Word, a new word) appears
-        let new_phrase = prev_beat != Some(sp.beat) || style == CapStyle::OneWord;
-        prev_beat = Some(sp.beat);
-        if new_phrase {
-            let from = if style == CapStyle::OneWord { 60.0 } else { 75.0 };
-            let mut scale = Param::new(ParamValue::Float(100.0));
-            scale.keyframes = vec![
-                Keyframe::new(Tick::ZERO, ParamValue::Float(from)),
-                Keyframe::new(after(Tick::ZERO, 2, frame), ParamValue::Float(112.0)),
-                Keyframe::new(after(Tick::ZERO, 4, frame), ParamValue::Float(100.0)),
-            ];
-            layer.params.insert("scale".into(), scale);
-        }
-        clips.push((sp.start, Tick(sp.end.0.saturating_sub(sp.start.0)), text, vec![layer]));
-    }
-    let label = match style {
-        CapStyle::Pop => "Word Captions: Pop",
-        CapStyle::Karaoke => "Word Captions: Karaoke",
-        CapStyle::OneWord => "Word Captions: One Word",
-    };
-    let n = clips.len();
-    let track = place_graphic_track(s, label, "Word Captions", clips)?;
-    Ok(json!({"clips": n, "beats": beats.len(), "track": track}))
-}
-
-/// Caption colours for the second, third and fourth speaker (the first uses `color`).
-const SPEAKER_COLORS: [[f32; 4]; 4] = [[1.0, 1.0, 1.0, 1.0], [0.5, 0.86, 1.0, 1.0], [1.0, 0.56, 0.85, 1.0], [0.72, 1.0, 0.48, 1.0]];
-
-/// One Word style alternates white and the highlight colour so consecutive words read apart.
-fn highlight_or_white(word: usize, fill: [f32; 4], highlight: [f32; 4]) -> [f32; 4] {
-    if word % 3 == 2 { highlight } else { fill }
 }

@@ -159,8 +159,25 @@ fn vertical_rejects_hostile_sizes() {
     }
 }
 
+/// Crop (Rounded Crop) of a clip as [left, top, right, bottom].
+fn crop(it: &TrackItem) -> [f64; 4] {
+    ["left", "top", "right", "bottom"].map(|k| f(it, "rounded_crop", k))
+}
+
+/// The size on screen of what a cropped, scaled clip shows (a 1920 x 1080 source).
+fn shown(it: &TrackItem) -> (f64, f64) {
+    let c = crop(it);
+    let k = f(it, "motion", "scale") / 100.0;
+    ((100.0 - c[0] - c[2]) / 100.0 * 1920.0 * k, (100.0 - c[1] - c[3]) / 100.0 * 1080.0 * k)
+}
+
+fn pos(it: &TrackItem) -> (f64, f64) {
+    let v = it.effect("motion").unwrap().param("position").unwrap().value.as_vec2().unwrap();
+    (v.x, v.y)
+}
+
 #[test]
-fn stacked_layout_crops_gameplay_on_top_and_the_model_below() {
+fn split_layout_puts_gameplay_on_top_and_the_model_below() {
     let mut s = demo();
     s.execute("shorts.verticalFill", json!({})).unwrap();
     let (c, t) = v1_clip(&s);
@@ -168,29 +185,82 @@ fn stacked_layout_crops_gameplay_on_top_and_the_model_below() {
     let r = s.execute("shorts.stackRight", json!({"clips": [c.0]})).unwrap();
     let model = ClipId(r["clips"][0]["model"].as_u64().unwrap());
     let q = seq(&s);
-    assert_eq!(q.video_tracks.len(), tracks + 1);
+    assert_eq!(q.video_tracks.len(), tracks + 2, "a model track and a background track");
     let (game, m) = (clip(&s, c), clip(&s, model));
-    // the game pane is centred in the top half, the model pane in the bottom half
-    let pos = |it: &TrackItem| it.effect("motion").unwrap().param("position").unwrap().value.as_vec2().unwrap();
-    assert_eq!((pos(&game).x, pos(&game).y), (540.0, 480.0));
-    assert_eq!((pos(&m).x, pos(&m).y), (540.0, 1440.0));
+    // gameplay across the top 60 % (1080 x 1152), the model across the bottom 40 % (1080 x 768)
+    assert_eq!(pos(&game), (540.0, 576.0));
+    assert_eq!(pos(&m), (540.0, 1536.0));
+    let (gw, gh) = shown(&game);
+    assert!((gw - 1080.0).abs() < 0.5 && (gh - 1152.0).abs() < 0.5, "{gw} x {gh}");
+    let (mw, mh) = shown(&m);
+    assert!((mw - 1080.0).abs() < 0.5 && (mh - 768.0).abs() < 0.5, "{mw} x {mh}");
     for it in [&game, &m] {
-        let crop: Vec<f64> = ["left", "top", "right", "bottom"].iter().map(|k| f(it, "crop", k)).collect();
-        assert!(crop.iter().all(|v| (0.0..=100.0).contains(v)), "{crop:?}");
-        // the cropped picture at its scale is exactly one 1080 x 960 pane
-        let k = f(it, "motion", "scale") / 100.0;
-        let shown_w = (100.0 - crop[0] - crop[2]) / 100.0 * 1920.0 * k;
-        let shown_h = (100.0 - crop[1] - crop[3]) / 100.0 * 1080.0 * k;
-        assert!((shown_w - 1080.0).abs() < 0.5 && (shown_h - 960.0).abs() < 0.5, "{shown_w} x {shown_h}");
+        assert!(crop(it).iter().all(|v| (0.0..=100.0).contains(v)), "{:?}", crop(it));
+        assert!(it.effect("crop").is_none(), "Rounded Crop replaces Crop");
     }
-    // the model is cut from the right side of the recording
+    // the model is cut from the right side of the recording, the gameplay from the rest
     assert!(m.effect("motion").unwrap().param("anchor").unwrap().value.as_vec2().unwrap().x > 1100.0);
+    assert!(crop(&game)[2] > 20.0, "the model's side is cut off the gameplay");
     assert!(m.link.is_none());
     q.check().unwrap();
     render(&s, t);
     s.execute("edit.undo", json!({})).unwrap();
     assert_eq!(seq(&s).video_tracks.len(), tracks);
     assert!(seq(&s).find_item(model).is_none());
+}
+
+#[test]
+fn stack_layout_keeps_all_the_gameplay_and_boxes_the_model() {
+    let mut s = demo();
+    s.execute("shorts.verticalFill", json!({})).unwrap();
+    let (c, t) = v1_clip(&s);
+    let r = s.execute("shorts.layout", json!({})).unwrap();
+    let model = ClipId(r["clips"][0]["model"].as_u64().unwrap());
+    let (game, m) = (clip(&s, c), clip(&s, model));
+    // the whole gameplay region beside the model, nothing more cut off
+    let g = crop(&game);
+    assert!(g[0].abs() < 0.01 && g[1].abs() < 0.01 && (g[2] - 30.0).abs() < 0.01 && g[3].abs() < 0.01, "{g:?}");
+    assert!((shown(&game).0 - 1080.0).abs() < 0.5, "full frame width");
+    // the model region whole, at its own shape
+    let mc = crop(&m);
+    assert!((mc[0] - 70.0).abs() < 0.01 && (mc[1] - 36.0).abs() < 0.01 && mc[2].abs() < 0.01 && mc[3].abs() < 0.01, "{mc:?}");
+    let (mw, mh) = shown(&m);
+    assert!((mw / mh - (0.3 * 1920.0) / (0.64 * 1080.0)).abs() < 0.01, "{mw} x {mh}");
+    assert!(mh < 1920.0 * 0.4, "the model takes a third of the frame, not half");
+    assert!(f(&m, "rounded_crop", "radius") > 0.0, "rounded corners");
+    // the two do not overlap and both fit in the frame
+    assert!(pos(&game).1 + shown(&game).1 / 2.0 <= pos(&m).1 - mh / 2.0 + 0.5);
+    assert!(pos(&m).1 + mh / 2.0 <= 1920.0 + 0.5);
+    render(&s, t);
+    assert_eq!(s.state.shorts_layout.as_ref().unwrap()["preset"], "stack");
+}
+
+#[test]
+fn layout_reapplies_in_place_and_live_changes_are_one_undo_step() {
+    let mut s = demo();
+    s.execute("shorts.verticalFill", json!({})).unwrap();
+    let (c, _) = v1_clip(&s);
+    s.execute("shorts.layout", json!({})).unwrap();
+    let tracks = seq(&s).video_tracks.len();
+    let count_models = |s: &Session| seq(s).video_tracks.iter().flat_map(|t| t.items.iter()).filter(|i| i.name.ends_with(" (Model)")).count();
+    let models = count_models(&s);
+    assert!(models >= 1);
+    let undo = s.history.undo.len();
+    s.history.merge_key = None;
+    for w in [0.9, 0.8, 0.7] {
+        s.execute("shorts.layout", json!({"preset": "stack", "gameWidth": w, "live": true})).unwrap();
+    }
+    assert_eq!(s.history.undo.len(), undo + 1, "live changes fold into one step");
+    assert_eq!(seq(&s).video_tracks.len(), tracks, "the old model and background copies were replaced");
+    assert_eq!(count_models(&s), models, "one model pane per clip, however often it is applied");
+    assert!((shown(&clip(&s, c)).0 - 1080.0).abs() < 0.5);
+    // picture in picture: the model box overlaps the gameplay pane's lower corner
+    let r = s.execute("shorts.layout", json!({"preset": "pip", "border": 8, "background": "black"})).unwrap();
+    let m = clip(&s, ClipId(r["clips"][0]["model"].as_u64().unwrap()));
+    assert!(pos(&m).0 > 540.0);
+    assert!(f(&m, "rounded_crop", "border") > 0.0);
+    assert!(!seq(&s).video_tracks.iter().any(|t| t.name == "Layout Background"), "black background: no blurred copy");
+    seq(&s).check().unwrap();
 }
 
 #[test]
@@ -228,9 +298,9 @@ fn punch_in_zooms_and_comes_back_and_zooms_cropped_panes_inside_their_edges() {
 
     // in a stacked layout the crop zooms with the picture, so the pane keeps its size
     s.execute("shorts.stackRight", json!({"clips": [c.0]})).unwrap();
-    let left_before = f(&clip(&s, c), "crop", "left");
+    let left_before = f(&clip(&s, c), "rounded_crop", "left");
     s.execute("shorts.punchIn", json!({"clips": [c.0], "time": t.0})).unwrap();
-    let crop = clip(&s, c).effect("crop").unwrap().param("left").unwrap().clone();
+    let crop = clip(&s, c).effect("rounded_crop").unwrap().param("left").unwrap().clone();
     assert_eq!(crop.keyframes.len(), 4);
     assert!(crop.keyframes[1].value.as_f64().unwrap() > left_before);
 
@@ -244,13 +314,14 @@ fn camera_shake_ramps_down_and_sits_before_the_crop() {
     let mut s = demo();
     let (c, t) = v1_clip(&s);
     s.execute("shorts.stackLeft", json!({"clips": [c.0]})).unwrap();
-    // with nothing selected, everything under the playhead shakes (both panes)
+    // with nothing selected, everything under the playhead shakes (both panes; the blurred
+    // background is left alone)
     s.state.selection.clear();
     let r = s.execute("shorts.shake", json!({"time": t.0, "amount": 60})).unwrap();
     assert_eq!(r["clips"], 2, "{r}");
     let it = clip(&s, c);
     let shake = it.effects.iter().position(|e| e.effect == "camera_shake").unwrap();
-    let crop = it.effects.iter().position(|e| e.effect == "crop").unwrap();
+    let crop = it.effects.iter().position(|e| e.effect == "rounded_crop").unwrap();
     assert!(shake < crop, "the picture shakes inside the pane's crop");
     let amount = it.effects[shake].param("amount").unwrap();
     let values: Vec<f64> = amount.keyframes.iter().map(|k| k.value.as_f64().unwrap()).collect();
@@ -335,10 +406,11 @@ fn word_captions_pop_highlights_each_spoken_word() {
     let items = caption_track(&s, &r);
     assert_eq!(seq(&s).video_tracks.len(), tracks + 1);
     assert_eq!(items.len(), 10, "one clip per word: {r}");
-    // 16 characters fit across a vertical frame: "HELLO THERE FRIENDS." is two phrases
+    // 16 characters fit across a vertical frame: "HELLO THERE FRIENDS" is two phrases (and
+    // punctuation is off by default)
     assert_eq!(text_of(&items[0]), "HELLO THERE");
     assert_eq!(text_of(&items[1]), "HELLO THERE");
-    assert_eq!(text_of(&items[2]), "FRIENDS.");
+    assert_eq!(text_of(&items[2]), "FRIENDS");
     assert_eq!(text_of(&items[3]), "THIS IS A", "a sentence ends a phrase");
     for p in items.windows(2) {
         assert!(p[0].end() <= p[1].start, "no overlaps");
@@ -363,15 +435,15 @@ fn word_captions_karaoke_and_one_word() {
     let items = caption_track(&s, &r);
     let runs =
         |it: &TrackItem| it.effects.iter().find(|e| e.effect == filmcraft_project::graphic::TEXT_LAYER).unwrap().layer.as_ref().map_or(0, |l| l.runs.len());
-    assert_eq!(text_of(&items[0]), "Hello there friends.");
+    assert_eq!(text_of(&items[0]), "Hello there friends");
     // karaoke lights the words spoken so far
     assert_eq!((runs(&items[0]), runs(&items[1]), runs(&items[2])), (1, 2, 3));
     render(&s, items[2].start);
 
     let r = s.execute("shorts.captionsOneWord", json!({})).unwrap();
     let items = caption_track(&s, &r);
-    assert_eq!(items.iter().map(text_of).collect::<Vec<_>>()[..3], ["HELLO", "THERE", "FRIENDS."]);
-    assert!(items.iter().all(|i| i.effects.last().unwrap().param("scale").unwrap().keyframes.len() == 3), "every word pops");
+    assert_eq!(items.iter().map(text_of).collect::<Vec<_>>()[..3], ["HELLO", "THERE", "FRIENDS"]);
+    assert!(items.iter().all(|i| i.effects.last().unwrap().param("scale").unwrap().keyframes.len() >= 3), "every word pops");
     render(&s, items[0].start);
 }
 
