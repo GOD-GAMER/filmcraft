@@ -43,9 +43,19 @@ jobs:
         shell: pwsh
         run: dotnet tool install --global wix --version 5.0.2
 
-      - name: Build and package
+      # The same build as package.ps1 (static CRT, icon required), plus speech-to-text: Whisper
+      # and its model download are off by default upstream, and Transcribe, Word Captions and
+      # Bleep Swear Words need them.
+      - name: Build (with speech-to-text)
         shell: pwsh
-        run: ./packaging/windows/package.ps1 -Arch x64
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+          FILMCRAFT_REQUIRE_WINRES: "1"
+        run: cargo build --release --locked -p filmcraft -p filmcraft-cli --target x86_64-pc-windows-msvc --features filmcraft/whisper
+
+      - name: Package
+        shell: pwsh
+        run: ./packaging/windows/package.ps1 -Arch x64 -SkipBuild
 
       - name: Upload the portable build
         uses: actions/upload-artifact@v4
