@@ -126,7 +126,8 @@ How long a short takes to export also depends on the layout. What makes a layout
 - captions, titles and bars are drawn and mixed only where they are.
 
 On the clip in the tests (24 s at 60 fps, Gameplay + Model with captions, a hook, punch-ins and a
-loop ending) this made the export about 3.3 times faster than before, on the same machine.
+loop ending) this made the export about 3 times faster than before on the same machine (137 s to 44 s
+for 4 seconds of 1080 × 1920 video on two cores).
 
 ## Auto-Trim to Length and Loop Ending
 
