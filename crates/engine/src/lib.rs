@@ -52,6 +52,7 @@ pub mod settings;
 pub mod shortcut_presets;
 pub mod shortcuts;
 pub mod shorts;
+pub mod shorts_auto;
 pub mod shorts_captions;
 pub mod shorts_formats;
 pub mod shorts_fx;
@@ -375,6 +376,9 @@ pub struct EditorState {
     /// The options Shorts ▸ Formats… (or a format from the menu) last applied.
     #[serde(default)]
     pub shorts_format: Option<serde_json::Value>,
+    /// The report of the last Shorts ▸ Auto Edit… (every version tried, its score and checks).
+    #[serde(default)]
+    pub shorts_auto: Option<serde_json::Value>,
 }
 
 /// Events for frontends (drained each frame).

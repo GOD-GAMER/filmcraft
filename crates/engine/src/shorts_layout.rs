@@ -97,7 +97,7 @@ pub(crate) struct Spec {
 
 /// The model's place in a typical stream layout: the outer 30 % of the width, from a third of
 /// the way down (a VTuber model or a camera in a bottom corner, under a chat window).
-fn model_region(side: Side) -> [f64; 4] {
+pub(crate) fn model_region(side: Side) -> [f64; 4] {
     match side {
         Side::Right => [0.70, 0.36, 1.0, 1.0],
         Side::Left => [0.0, 0.36, 0.30, 1.0],
@@ -105,7 +105,7 @@ fn model_region(side: Side) -> [f64; 4] {
 }
 
 /// The gameplay beside the model.
-fn game_region(side: Side) -> [f64; 4] {
+pub(crate) fn game_region(side: Side) -> [f64; 4] {
     match side {
         Side::Right => [0.0, 0.0, 0.70, 1.0],
         Side::Left => [0.30, 0.0, 1.0, 1.0],
@@ -424,7 +424,7 @@ fn background_copy(it: &TrackItem, id: u64, storage: (f64, f64), display: (f64, 
 
 /// The clips a layout arranges: selected footage clips, or every footage clip of the main
 /// picture track. Copies a layout made are never targets.
-fn targets(s: &Session, p: &Value) -> Vec<ClipId> {
+pub(crate) fn targets(s: &Session, p: &Value) -> Vec<ClipId> {
     let Some(q) = s.active_sequence() else { return Vec::new() };
     let ok = |i: &TrackItem| {
         is_footage(&s.project, i) && !i.name.ends_with(MODEL_SUFFIX) && !i.name.ends_with(BACKGROUND_SUFFIX) && !crate::shorts_trim::is_loop_hold(i)
@@ -459,6 +459,29 @@ pub(crate) fn current_rects(s: &Session) -> Option<([f64; 4], Option<[f64; 4]>)>
     let (pane, model) = spec.rects(frame, display);
     let frac = |r: Rect| [r.x / frame.0, r.y / frame.1, (r.x + r.w) / frame.0, (r.y + r.h) / frame.1];
     Some((frac(pane), model.map(frac)))
+}
+
+/// Where the last layout put what: the gameplay pane and the part of the recording it shows, and
+/// the model box and its part of the recording. Panes and boxes are fractions of the frame,
+/// parts of the recording fractions of the recording (`[x0, y0, x1, y1]`).
+pub(crate) struct Geometry {
+    pub pane: [f64; 4],
+    pub window: [f64; 4],
+    pub model: Option<([f64; 4], [f64; 4])>,
+}
+
+pub(crate) fn current_geometry(s: &Session) -> Option<Geometry> {
+    let v = s.state.shorts_layout.as_ref()?;
+    let q = s.active_sequence()?;
+    let frame = (f64::from(q.settings.width), f64::from(q.settings.height));
+    let src = source_size(s)?;
+    if frame.0 < 1.0 || frame.1 < 1.0 || src.0 < 1.0 || src.1 < 1.0 {
+        return None;
+    }
+    let spec = Spec::from_params(v, frame, src, "shorts.autoEdit", (Preset::Stack, Side::Right)).ok()?;
+    let (window, pane, region, boxr) = spec.geometry(frame, src);
+    let f = |r: Rect, (w, h): (f64, f64)| [r.x / w, r.y / h, (r.x + r.w) / w, (r.y + r.h) / h];
+    Some(Geometry { pane: f(pane, frame), window: f(window, src), model: spec.show_model.then(|| (f(boxr, frame), f(region, src))) })
 }
 
 /// The bottom edge of the gameplay pane of the last layout applied (fraction of the frame height),

@@ -524,6 +524,11 @@ fn is_bleep(pr: &filmcraft_project::Project, it: &TrackItem) -> bool {
         && pr.item(it.item).is_some_and(|i| matches!(&i.kind, ItemKind::Media(m) if matches!(m.media, MediaRef::Generator(Generator::Tone { .. }))))
 }
 
+/// Whether the active sequence has beeps from Bleep Swear Words already.
+pub(crate) fn has_bleeps(s: &Session) -> bool {
+    s.active_sequence().is_some_and(|q| q.audio_tracks.iter().flat_map(|t| t.items.iter()).any(|i| is_bleep(&s.project, i)))
+}
+
 /// `words` with the ones under a bleep masked ("F***"), for Word Captions.
 pub(crate) fn mask_bleeped(s: &Session, mut words: Vec<SeqWord>) -> Vec<SeqWord> {
     let Some(q) = s.active_sequence() else { return words };

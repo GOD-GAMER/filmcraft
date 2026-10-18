@@ -161,6 +161,12 @@ pub trait MediaSource: Send + Sync {
     fn video_frame(&self, req: FrameRequest) -> Result<Arc<VideoFrame>>;
     /// `frames` audio frames starting at sample index `start` (at `sample_rate`, media time).
     fn audio(&self, start: i64, frames: usize, sample_rate: u32) -> Result<AudioBuffer>;
+    /// The media time of the nearest picture at or before `t` that decodes on its own (a
+    /// keyframe), when the source knows: frames there are the quickest to get, which matters
+    /// when a few frames are sampled across a long recording. `None` when it does not know.
+    fn keyframe_before(&self, _t: Tick) -> Option<Tick> {
+        None
+    }
     /// Like [`audio`](Self::audio) for audio stream `stream` (an index into
     /// [`MediaInfo::audio_streams`]). Sources with a single audio stream need not override this:
     /// stream 0 is `audio`, any other index is [`MediaError::NoStream`].

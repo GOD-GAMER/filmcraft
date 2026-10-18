@@ -3755,3 +3755,39 @@
 	TikTok 1080×1920	TikTok 1080×1920
 	H.264 9:16 for TikTok, scaled to fill, VBR 1 pass, 8 Mbps	TikTok 向けの H.264 9:16、フレームを埋めるようにスケール、VBR 1 パス、8 Mbps
 	H.264 9:16 for YouTube Shorts (up to 3 minutes), scaled to fill, VBR 1 pass, 16 Mbps	YouTube ショート（最長 3 分）向けの H.264 9:16、フレームを埋めるようにスケール、VBR 1 パス、16 Mbps
+	Auto Edit…	自動編集…
+	 (stream captions cut off)	（配信の字幕はカット）
+	All text is clear of the app's buttons and bars.	すべてのテキストがアプリのボタンやバーにかかっていません。
+	Also tried:	ほかに試した案:
+	Auto Edit again	もう一度自動編集
+	Auto Edit tries several versions of the short, checks each one and keeps the best.	自動編集はショート動画をいくつかの案で作り、それぞれを確認して一番良いものを残します。
+	Auto Edit	自動編集
+	Captions and hook title	キャプションとフックタイトル
+	Checking versions…	案を確認しています…
+	Game action suits big gameplay.	ゲームの動きが多いので、ゲーム画面を大きくするのが合います。
+	Loop ending	ループするエンディング
+	No captions.	キャプションなし。
+	No model in the stream: the whole picture is shown.	配信にモデルがいないため、画面全体を表示します。
+	No model was found in the stream, so the model box may show gameplay.	配信にモデルが見つからないため、モデルの枠にゲーム画面が映る可能性があります。
+	Picked: {name}{cut}, {score}/100	採用: {name}{cut}、{score}/100
+	Punch-ins on loud moments	大きな声の場面でパンチイン
+	Talk over a quiet game suits the spotlight.	静かなゲーム画面でのトークにはモデル主役が合います。
+	The clip fills {pct} % of the screen the app leaves.	アプリが空けている画面の {pct} % をクリップが使っています。
+	The gameplay is shown at {pct} % of its size in the stream.	ゲーム画面は配信での大きさの {pct} % で表示されます。
+	The model is only as big as it is in the stream.	モデルは配信と同じ大きさのままです。
+	The picture behind the captions is {pct} % busy.	キャプションの背後の画面は {pct} % ごちゃついています。
+	The spotlight needs a model.	モデル主役にはモデルが必要です。
+	The stream has no captions of its own.	配信自体には字幕がありません。
+	The stream's own captions are cut off.	配信自体の字幕はカットされています。
+	The stream's own captions show under the new ones.	配信自体の字幕が新しいキャプションの下に見えています。
+	The whole picture, for clips where everything matters.	画面全体を見せる、すべてが大事なクリップ向けです。
+	Trim, bleep swears and loop ending	トリミング、悪態のピー音、ループするエンディング
+	Trimmed to {len}	{len} にトリミング
+	Try formats and layouts	フォーマットとレイアウトを試す
+	Use this	これを使う
+	{name}{cut}, {score}/100	{name}{cut}、{score}/100
+	Bleeps: {n}	ピー音: {n}
+	Moments: {n}	場面: {n}
+	Punch-ins: {n}	パンチイン: {n}
+	{pct} % of the model's face is in view.	モデルの顔の {pct} % が見えています。
+	{pct} % of the text is under the app's buttons or bars.	テキストの {pct} % がアプリのボタンやバーの下にあります。

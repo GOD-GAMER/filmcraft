@@ -3756,3 +3756,39 @@
 	TikTok 1080×1920	TikTok 1080×1920
 	H.264 9:16 for TikTok, scaled to fill, VBR 1 pass, 8 Mbps	H.264 9:16 para TikTok, escalado para rellenar, VBR 1 pasada, 8 Mbps
 	H.264 9:16 for YouTube Shorts (up to 3 minutes), scaled to fill, VBR 1 pass, 16 Mbps	H.264 9:16 para YouTube Shorts (hasta 3 minutos), escalado para rellenar, VBR 1 pasada, 16 Mbps
+	Auto Edit…	Edición automática…
+	 (stream captions cut off)	 (subtítulos del directo recortados)
+	All text is clear of the app's buttons and bars.	Todo el texto queda libre de los botones y barras de la app.
+	Also tried:	También probados:
+	Auto Edit again	Editar automáticamente de nuevo
+	Auto Edit tries several versions of the short, checks each one and keeps the best.	La edición automática prueba varias versiones del vídeo corto, revisa cada una y se queda con la mejor.
+	Auto Edit	Edición automática
+	Captions and hook title	Subtítulos y título gancho
+	Checking versions…	Revisando versiones…
+	Game action suits big gameplay.	La acción del juego pide un juego grande.
+	Loop ending	Final en bucle
+	No captions.	Sin subtítulos.
+	No model in the stream: the whole picture is shown.	No hay modelo en el directo: se muestra la imagen completa.
+	No model was found in the stream, so the model box may show gameplay.	No se encontró ningún modelo en el directo, así que el recuadro del modelo puede mostrar el juego.
+	Picked: {name}{cut}, {score}/100	Elegido: {name}{cut}, {score}/100
+	Punch-ins on loud moments	Zoom de golpe en los momentos fuertes
+	Talk over a quiet game suits the spotlight.	Hablar sobre un juego tranquilo encaja con el modelo destacado.
+	The clip fills {pct} % of the screen the app leaves.	El clip ocupa el {pct} % de la pantalla que deja la app.
+	The gameplay is shown at {pct} % of its size in the stream.	El juego se muestra al {pct} % de su tamaño en el directo.
+	The model is only as big as it is in the stream.	El modelo solo es tan grande como en el directo.
+	The picture behind the captions is {pct} % busy.	La imagen detrás de los subtítulos está un {pct} % recargada.
+	The spotlight needs a model.	El modelo destacado necesita un modelo.
+	The stream has no captions of its own.	El directo no tiene subtítulos propios.
+	The stream's own captions are cut off.	Los subtítulos propios del directo quedan recortados.
+	The stream's own captions show under the new ones.	Los subtítulos propios del directo se ven debajo de los nuevos.
+	The whole picture, for clips where everything matters.	La imagen completa, para clips en los que todo importa.
+	Trim, bleep swears and loop ending	Recortar, pitar las palabrotas y final en bucle
+	Trimmed to {len}	Recortado a {len}
+	Try formats and layouts	Probar formatos y diseños
+	Use this	Usar este
+	{name}{cut}, {score}/100	{name}{cut}, {score}/100
+	Bleeps: {n}	Pitidos: {n}
+	Moments: {n}	Momentos: {n}
+	Punch-ins: {n}	Zooms de golpe: {n}
+	{pct} % of the model's face is in view.	Se ve el {pct} % de la cara del modelo.
+	{pct} % of the text is under the app's buttons or bars.	El {pct} % del texto queda bajo los botones o barras de la app.

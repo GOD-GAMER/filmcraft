@@ -174,7 +174,7 @@ fn shorts_is_a_menu_of_its_own_with_safe_zones_and_export() {
     let items = menu_items(d.app());
     assert!(!items.iter().any(|i| i.path.first().map(String::as_str) == Some("Sequence") && i.id.starts_with("shorts.")), "nothing left under Sequence");
     let ids: Vec<String> = items.iter().filter(|i| i.path.first().map(String::as_str) == Some("Shorts")).map(|i| i.id.clone()).collect();
-    assert_eq!(ids.first().map(String::as_str), Some("shorts.format"));
+    assert_eq!(ids.iter().take(2).map(String::as_str).collect::<Vec<_>>(), ["shorts.autoEdit", "shorts.format"], "Auto Edit… and Formats… first");
     let at = |id: &str| ids.iter().position(|x| x == id).unwrap_or_else(|| panic!("{id} in {ids:?}"));
     assert!(at("view.safeZones.tiktok") > at("shorts.loopEnding") && at("shorts.exportTikTok") < at("shorts.verticalFill"), "{ids:?}");
     // Safe Zones: one at a time, drawn over the Program monitor
@@ -247,4 +247,48 @@ fn auto_trim_asks_for_the_length() {
     d.frames(3);
     let els = d.call("ui.elements", json!({})).to_string();
     assert!(els.contains("shortsTrim.seconds") && els.contains("shortsTrim.preset.15"), "the dialog is open");
+}
+
+#[test]
+fn auto_edit_window_runs_reports_and_can_switch_versions() {
+    let mut s = Session::default();
+    s.execute("file.openDemoProject", json!({})).unwrap();
+    let mut d = Driver::with(s);
+    let stream = d.app().session.state.active_sequence;
+    let undo = d.undo_len();
+    d.ok("ui.menu.invoke", json!({"id": "shorts.autoEdit"}));
+    d.frames(3);
+    assert!(d.app().ui.shorts.auto.is_some(), "the window is open");
+    assert_eq!(d.undo_len(), undo, "nothing happens until asked");
+    d.click("shortsAuto.platform.tiktok");
+    d.click("shortsAuto.run");
+    d.settle();
+    let r = d.app().ui.shorts.auto.clone().unwrap().result;
+    assert_eq!(r["platform"], "tiktok", "{r}");
+    let versions = r["versions"].as_array().unwrap().clone();
+    assert!(versions.len() >= 3, "{r}");
+    assert_eq!(d.undo_len(), undo + 1, "one undo step");
+    assert_eq!(d.app().ui.program.safe_zone, "tiktok");
+    let els = d.call("ui.elements", json!({})).to_string();
+    assert!(els.contains("shortsAuto.check.0") && els.contains("shortsAuto.use."), "the report is shown");
+    // another version from the report: still one step
+    let picked = r["picked"].as_u64().unwrap() as usize;
+    let other = (0..versions.len()).find(|i| *i != picked).unwrap();
+    d.click(&format!("shortsAuto.use.{other}"));
+    d.settle();
+    let r2 = d.app().ui.shorts.auto.clone().unwrap().result;
+    assert_eq!(r2["versions"][0]["format"], versions[other]["format"]);
+    assert_eq!(d.undo_len(), undo + 1);
+    // Cancel puts the stream back
+    d.click("shortsAuto.cancel");
+    assert!(d.app().ui.shorts.auto.is_none());
+    assert_eq!(d.undo_len(), undo);
+    assert_eq!(d.app().session.state.active_sequence, stream);
+    // OK straight away runs it with the options last used, and keeps it
+    d.ok("ui.menu.invoke", json!({"id": "shorts.autoEdit"}));
+    d.frames(3);
+    d.click("shortsAuto.ok");
+    assert!(d.app().ui.shorts.auto.is_none());
+    assert_eq!(d.undo_len(), undo + 1);
+    assert_eq!(d.app().session.state.shorts_auto.clone().unwrap()["platform"], "tiktok");
 }

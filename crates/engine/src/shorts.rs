@@ -1,6 +1,8 @@
 //! The Shorts menu: tools for vertical short-form video (YouTube Shorts, TikTok, Reels), built
 //! with clips cut from streams in mind.
 //!
+//! - **Auto Edit…**: tries the formats on the clip, checks each and keeps the best, see
+//!   `shorts_auto`.
 //! - **Formats** (Formats…, and YouTube Shorts ▸ / TikTok ▸ for each format straight away): a
 //!   whole short in one step, see [`crate::shorts_formats`].
 //! - **Vertical Short** (Crop to Fill, Follow Subject, Blurred Background): a 1080 x 1920 copy of
@@ -51,7 +53,8 @@ fn spec_in(menu: &'static [&'static str], id: &'static str, label: &'static str,
 
 const VERTICAL: &str = r#"{"width":u32=1080,"height":u32=1920,"name":str?}"#;
 const LAYOUT: &str = r##"{"clips":[id]?,"preset":"stack|split|pip|spotlight|full","side":"right|left","game":[x0,y0,x1,y1]?,"gameWidth":f?,"gameSize":f?,"gamePan":f?,"gameY":f?,"model":[x0,y0,x1,y1]?,"modelWidth":f?,"modelHeight":f?,"modelX":f?,"modelY":f?,"corner":px?,"gameCorner":px?,"border":px?,"borderColor":"#ffffff"?,"showModel":bool?,"background":"blur|black","split":f?,"live":bool?}"##;
-const FORMAT: &str = r#"{"platform":"youtube|tiktok","format":"gameplay|fullFrame|meme|spotlight|countdown","title":str?,"side":"right|left"?,"hook":bool?,"captions":bool?,"captionStyle":"auto|pop|karaoke|box|oneWord|plain"?,"progressBar":bool=true,"seconds":f=0,"loop":bool=false,"loopSeconds":f=0.5,"moments":n=3,"momentSeconds":f=8,"background":"blur|black"?}"#;
+const AUTO: &str = r#"{"platform":"youtube|tiktok","length":"auto|keep"|seconds="auto","title":str?,"tryFormats":bool=true,"captions":bool=true,"hype":bool=true,"finish":bool=true,"pick":{"format":str,"side":"right|left","crop":bool}?}"#;
+const FORMAT: &str = r#"{"platform":"youtube|tiktok","format":"gameplay|fullFrame|meme|spotlight|countdown","title":str?,"side":"right|left"?,"hook":bool?,"captions":bool?,"captionStyle":"auto|pop|karaoke|box|oneWord|plain"?,"progressBar":bool=true,"seconds":f=0,"loop":bool=false,"loopSeconds":f=0.5,"moments":n=3,"momentSeconds":f=8,"background":"blur|black"?,"game":[x0,y0,x1,y1]?,"bleep":bool=false,"hype":bool=false}"#;
 const CAPTIONS: &str = r##"{"style":"pop|karaoke|box|oneWord|plain"?,"maxWords":n=3,"maxChars":n?,"lines":n=1,"font":"Inter"?,"fontStyle":"Bold"?,"size":px?,"uppercase":bool=true,"punctuation":bool=false,"color":"#ffffff"?,"highlight":"#ffd60a"?,"highlightText":"#ffffff"?,"grow":percent?,"outline":percent?,"outlineColor":"#000000"?,"shadow":n?,"background":bool?,"backgroundColor":"#000000"?,"backgroundOpacity":n?,"radius":percent?,"x":f?,"y":f?,"width":f?,"animation":"pop|bounce|fade|slide|none"?,"hold":seconds=0.25,"speakerColors":bool=false,"fixes":"wrong=right, …"?,"replace":bool=true,"live":bool?}"##;
 
 pub(crate) fn commands() -> Vec<CommandSpec> {
@@ -66,6 +69,7 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
         };
     }
     vec![
+        spec("shorts.autoEdit", "Auto Edit…", AUTO, crate::shorts_auto::auto_edit),
         spec("shorts.format", "Formats…", FORMAT, |s, p| fm::format(s, p, None, "shorts.format")),
         format_spec!(YOUTUBE_MENU, "shorts.youtube.gameplay", "Gameplay + Model", fm::YOUTUBE, Format::Gameplay),
         format_spec!(YOUTUBE_MENU, "shorts.youtube.fullFrame", "Full Frame + Blur", fm::YOUTUBE, Format::FullFrame),

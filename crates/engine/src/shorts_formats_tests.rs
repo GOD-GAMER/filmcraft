@@ -373,3 +373,61 @@ fn formats_reject_hostile_options_without_leaving_anything_behind() {
     empty.execute("file.newSequence", json!({"name": "Empty", "width": 1920, "height": 1080})).unwrap();
     assert!(empty.execute("shorts.youtube.gameplay", json!({})).is_err());
 }
+
+#[test]
+fn auto_edit_tries_versions_checks_them_and_keeps_the_best() {
+    let (mut s, _) = stream(12.0, &[(6.0, -6.0)]);
+    let stream_seq = s.state.active_sequence;
+    let (undo, seqs) = (s.history.undo.len(), s.project.sequences().count());
+    let r = s.execute("shorts.autoEdit", json!({"platform": "tiktok"})).unwrap();
+    assert_eq!(s.history.undo.len(), undo + 1, "one undo step");
+    assert_eq!(s.project.sequences().count(), seqs + 1, "the trials leave nothing behind");
+    for e in &s.events {
+        if let crate::Event::OpenSequence(id) = e {
+            assert!(s.project.sequence(*id).is_some(), "no event about a trial's sequence");
+        }
+    }
+    let versions = r["versions"].as_array().unwrap();
+    assert!(versions.len() >= 3, "{r}");
+    let checks = ["textClear", "modelInView", "screenUsed", "gameplaySize", "fitsClip", "captionClash", "readable"];
+    for v in versions {
+        let ids: Vec<&str> = v["checks"].as_array().unwrap().iter().map(|c| c["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, checks, "{v}");
+        let score = v["score"].as_f64().unwrap();
+        assert!((0.0..=100.0).contains(&score));
+        let sum: f64 = v["checks"].as_array().unwrap().iter().map(|c| c["points"].as_f64().unwrap()).sum();
+        assert!((sum - score).abs() <= 1.0, "the score is the checks' points: {v}");
+    }
+    let picked = &versions[r["picked"].as_u64().unwrap() as usize];
+    let best = versions.iter().map(|v| v["score"].as_f64().unwrap()).fold(0.0, f64::max);
+    assert_eq!(picked["score"].as_f64().unwrap(), best);
+    // what was made: a TikTok short of the picked format with captions, punch-ins and a loop
+    let q = seq(&s);
+    assert_eq!((q.settings.width, q.settings.height), (1080, 1920));
+    let names = track_names(&s);
+    assert!(names.iter().any(|n| n == "Word Captions") && names.iter().any(|n| n == "Progress Bar"), "{names:?}");
+    assert!(q.video_tracks.iter().flat_map(|t| t.items.iter()).any(crate::shorts_trim::is_loop_hold));
+    let steps: Vec<&str> = r["steps"].as_array().unwrap().iter().map(|x| x["id"].as_str().unwrap()).collect();
+    assert!(steps.contains(&"captions") && steps.contains(&"loop") && steps.contains(&"punchIns"), "{steps:?}");
+    assert_eq!(s.state.shorts_auto.as_ref().unwrap()["picked"], r["picked"]);
+    render(&s, sec(3.0));
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(s.state.active_sequence.map(|id| s.project.sequence(id).is_some()), Some(true));
+    assert_eq!(s.project.sequences().count(), seqs);
+    let _ = stream_seq;
+    // one version picked by hand
+    let r = s.execute("shorts.autoEdit", json!({"platform": "youtube", "pick": {"format": "fullFrame"}, "hype": false, "finish": false})).unwrap();
+    assert_eq!(r["versions"].as_array().unwrap().len(), 1);
+    assert!(track_names(&s).iter().any(|n| n == "Title"));
+    assert!(!seq(&s).video_tracks.iter().flat_map(|t| t.items.iter()).any(crate::shorts_trim::is_loop_hold), "no finishing asked for");
+    // hostile options
+    for p in [
+        json!({"platform": "vine"}),
+        json!({"length": 1}),
+        json!({"length": "forever"}),
+        json!({"pick": {"format": "wavy"}}),
+        json!({"title": "x".repeat(300)}),
+    ] {
+        assert!(s.execute("shorts.autoEdit", p.clone()).is_err(), "{p}");
+    }
+}

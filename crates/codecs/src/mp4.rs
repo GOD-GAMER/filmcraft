@@ -454,6 +454,15 @@ impl MediaSource for Mp4Source {
         Ok(f)
     }
 
+    fn keyframe_before(&self, t: Tick) -> Option<Tick> {
+        let track = self.file.tracks.get(self.vtrack?)?;
+        let ts = i64::from(track.timescale).max(1);
+        let i = track.sample_at_presentation_time(t.max(Tick::ZERO).to_rational_round(1, ts))?;
+        let k = track.sync_sample_before(i);
+        let pts = track.samples.get(k)?.pts.saturating_add(track.edit_offset);
+        Some(Tick::from_rational(pts, 1, ts))
+    }
+
     fn audio(&self, start: i64, frames: usize, sample_rate: u32) -> Result<AudioBuffer, MediaError> {
         self.audio_stream(0, start, frames, sample_rate)
     }
@@ -849,6 +858,29 @@ mod tests {
         assert_eq!(frames(&Mp4Source::open("huge.mov", mov_with_edits(huge)).expect("open")), 4);
         let zero = vec![Edit { segment_duration: 0, media_time: 0, media_rate: 0x10000 }];
         assert_eq!(frames(&Mp4Source::open("zero.mov", mov_with_edits(zero)).expect("open")), 4);
+    }
+
+    /// Keyframes: a 10-frame track whose frames 0 and 6 are sync samples. A time inside the second
+    /// run gives frame 6's time, inside the first run frame 0's (Auto Edit samples frames there,
+    /// where one picture decodes instead of a run).
+    #[test]
+    fn keyframe_before_finds_the_sync_sample() {
+        let fr = filmcraft_prores::Frame::new(64, 32, filmcraft_prores::ChromaFormat::Yuv422, 10, false);
+        let data = filmcraft_prores::Encoder::new(filmcraft_prores::Profile::Hq, 64, 32).encode(&fr).expect("encode");
+        let mut mux = Mp4Writer::new(std::io::Cursor::new(Vec::new()), WriterOptions::new(Brand::Mov)).expect("writer");
+        let t = mux.add_track(TrackConfig::new(SampleEntry::prores(FourCc(*b"apch"), 64, 32), 25)).expect("track");
+        for i in 0..10 {
+            mux.write_sample(t, WriteSample { data: &data, duration: 1, composition_offset: 0, is_sync: i == 0 || i == 6 }).expect("sample");
+        }
+        let b: Arc<[u8]> = mux.finish().expect("finish").into_inner().into();
+        let s = Mp4Source::open("gop.mov", b).expect("open");
+        let at = |f: i64| Tick::from_rational(f, 1, 25);
+        assert_eq!(s.keyframe_before(at(8)), Some(at(6)));
+        assert_eq!(s.keyframe_before(at(6)), Some(at(6)));
+        assert_eq!(s.keyframe_before(at(3)), Some(at(0)));
+        // before the start and far past the end: still a keyframe of the track, never a panic
+        assert_eq!(s.keyframe_before(Tick(-5)), Some(at(0)));
+        assert!(s.keyframe_before(Tick(i64::MAX)).is_some());
     }
 
     /// #714: a video track without an edit list whose pictures carry a composition delay (B-frame

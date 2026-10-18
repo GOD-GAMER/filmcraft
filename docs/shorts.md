@@ -5,7 +5,7 @@ vertical short-form video (YouTube Shorts, TikTok, Instagram Reels), with clips 
 and VTuber VODs in mind. Every item is one undo step and is also a command that agents can run
 over MCP or the control channel (`shorts.*`, parameters below).
 
-The menu: **Formats…**, **YouTube Shorts ▸** and **TikTok ▸** (each format in one click),
+The menu: **Auto Edit…**, **Formats…**, **YouTube Shorts ▸** and **TikTok ▸** (each format in one click),
 **Layout…**, **Word Captions…**, **Auto-Trim to Length…**, **Loop Ending**, **Safe Zones ▸**,
 **Export for YouTube Shorts…**, **Export for TikTok…**, then the single tools grouped in
 **Reframe**, **Effects at Playhead**, **Automatic Effects**, **Graphics**, **Caption Styles** and
@@ -16,13 +16,47 @@ A typical clip:
 1. Cut the moment from the VOD on a normal 16:9 sequence.
 2. **Sequence ▸ Transcript ▸ Transcribe…** (once per clip; it finds every word and when it is
    said). Optionally remove filler words and pauses from the Transcript menu.
-3. **Shorts ▸ Formats…**: pick the platform and a format; the Program monitor shows the short
-   (a 1080 x 1920 copy of the sequence; the 16:9 original is left as it was) with the platform's
+3. **Shorts ▸ Auto Edit…** (pick the platform; it tries the formats, checks each and keeps the
+   best), or **Shorts ▸ Formats…** to choose yourself. The Program monitor shows the short (a
+   1080 x 1920 copy of the sequence; the 16:9 original is left as it was) with the platform's
    safe zones over it.
 4. Fine-tune with **Layout…** and **Word Captions…**, add effects (**Find Hype Moments**,
    **Zoom on Every Cut**, the effects at the playhead), **Bleep Swear Words** if the clip needs
    it.
 5. **Export for YouTube Shorts…** or **Export for TikTok…**.
+
+## Auto Edit
+
+**Auto Edit…** makes the short on its own and checks its own work. Pick the platform (YouTube
+Shorts or TikTok), the length (Automatic: under a minute on YouTube Shorts, a minute on TikTok;
+or keep it, or 15, 30 or 60 seconds), an optional hook title, and which steps it may take; then
+**Auto Edit**. It:
+
+1. **Looks at the clip:** frames sampled across the recording (at keyframes, which decode
+   quickest) show which bottom corner the model is in (the corner whose colours stay the same
+   while the game around it changes), whether the stream burned its own captions in under the
+   gameplay (a band of text that stays in place), and how much the game changes; the transcript
+   says how much of the clip is talk.
+2. **Tries each version:** Gameplay + Model, Model Spotlight and Full Frame + Blur, each with and
+   without the stream's own captions cut off (when it has any), made for real and taken back.
+3. **Checks each one** (out of 100): text clear of the app's buttons and bars (25), the model's
+   face in view (20), how much of the screen the app leaves shows the clip (15), how big the
+   gameplay is (10), whether the format suits the clip (10: game action wants big gameplay, talk
+   over a quiet game the spotlight), no clash with the stream's own captions (10), and how busy
+   the picture is behind the captions (10).
+4. **Keeps the best**, with captions and the hook title, punch-ins on the loud moments, bleeped
+   swears, the length trimmed and a loop ending, as one undo step.
+
+The window then lists every check of the version it kept, what it did, and the other versions
+with their scores: **Use this** makes one of them instead. **Auto Edit again** re-runs it with
+new options, Cancel takes it all back, **Export for …** goes on to Export mode. The checks are
+measurements, not taste: they catch what is easy to get wrong (text under the buttons, a covered
+face, new captions over the stream's own, a tiny picture). If the model was not where it looked,
+move its box in **Layout…** afterwards.
+
+| Command | Parameters |
+|---|---|
+| `shorts.autoEdit` | `{"platform": "youtube\|tiktok", "length": "auto\|keep" or seconds, "title": "…", "tryFormats": true, "captions": true, "hype": true, "finish": true (trim, bleep, loop), "pick": {"format", "side", "crop"} (make that version)}`; the result is the report: `look` (what it found), `versions` (each with `score` and `checks`), `picked`, `steps`, `seconds`, `warnings`. |
 
 ## Formats
 
@@ -54,7 +88,7 @@ bars, progress bar, loop ending) is replaced.
 
 | Command | Parameters |
 |---|---|
-| `shorts.format`, `shorts.youtube.<format>`, `shorts.tiktok.<format>` (`gameplay`, `fullFrame`, `meme`, `spotlight`, `countdown`) | `{"platform": "youtube\|tiktok", "format": "…", "title": "…", "side": "right\|left", "hook": bool, "captions": bool, "captionStyle": "auto\|pop\|karaoke\|box\|oneWord\|plain", "progressBar": true, "seconds": 0 (or 3–600), "loop": false, "loopSeconds": 0.5, "moments": 3, "momentSeconds": 8, "background": "blur\|black"}` |
+| `shorts.format`, `shorts.youtube.<format>`, `shorts.tiktok.<format>` (`gameplay`, `fullFrame`, `meme`, `spotlight`, `countdown`) | `{"platform": "youtube\|tiktok", "format": "…", "title": "…", "side": "right\|left", "hook": bool, "captions": bool, "captionStyle": "auto\|pop\|karaoke\|box\|oneWord\|plain", "progressBar": true, "seconds": 0 (or 3–600), "loop": false, "loopSeconds": 0.5, "moments": 3, "momentSeconds": 8, "background": "blur\|black", "game": [x0, y0, x1, y1] (the gameplay part of the recording), "bleep": false, "hype": false}` |
 
 The result lists the short's length, `warnings` about it (too long, or over a minute on YouTube
 Shorts) and the export preset to use.

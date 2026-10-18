@@ -473,6 +473,9 @@ impl MediaSource for UnsupportedAsSlate {
             r => r,
         }
     }
+    fn keyframe_before(&self, t: filmcraft_time::Tick) -> Option<filmcraft_time::Tick> {
+        self.inner.keyframe_before(t)
+    }
     fn audio(&self, start: i64, frames: usize, sample_rate: u32) -> filmcraft_media::Result<AudioBuffer> {
         self.inner.audio(start, frames, sample_rate)
     }
@@ -520,6 +523,9 @@ impl MediaSource for DamagedAsSlate {
             }
             r => r,
         }
+    }
+    fn keyframe_before(&self, t: filmcraft_time::Tick) -> Option<filmcraft_time::Tick> {
+        self.inner.keyframe_before(t)
     }
     fn audio(&self, start: i64, frames: usize, sample_rate: u32) -> filmcraft_media::Result<AudioBuffer> {
         self.inner.audio(start, frames, sample_rate)

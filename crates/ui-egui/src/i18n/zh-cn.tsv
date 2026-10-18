@@ -3731,3 +3731,39 @@
 	TikTok 1080×1920	TikTok 1080×1920
 	H.264 9:16 for TikTok, scaled to fill, VBR 1 pass, 8 Mbps	H.264 9:16（TikTok），缩放填充，VBR 1 遍，8 Mbps
 	H.264 9:16 for YouTube Shorts (up to 3 minutes), scaled to fill, VBR 1 pass, 16 Mbps	H.264 9:16（YouTube Shorts，最长 3 分钟），缩放填充，VBR 1 遍，16 Mbps
+	Auto Edit…	自动剪辑…
+	 (stream captions cut off)	（已裁掉直播自带字幕）
+	All text is clear of the app's buttons and bars.	所有文字都避开了应用的按钮和栏。
+	Also tried:	也尝试过：
+	Auto Edit again	再次自动剪辑
+	Auto Edit tries several versions of the short, checks each one and keeps the best.	自动剪辑会尝试短视频的多个版本，逐一检查并保留最好的那个。
+	Auto Edit	自动剪辑
+	Captions and hook title	字幕和吸睛标题
+	Checking versions…	正在检查各个版本…
+	Game action suits big gameplay.	游戏动作多，适合放大游戏画面。
+	Loop ending	循环结尾
+	No captions.	没有字幕。
+	No model in the stream: the whole picture is shown.	直播中没有模型：显示完整画面。
+	No model was found in the stream, so the model box may show gameplay.	直播中没有找到模型，模型框里可能显示的是游戏画面。
+	Picked: {name}{cut}, {score}/100	已选：{name}{cut}，{score}/100
+	Punch-ins on loud moments	在响亮的时刻推近镜头
+	Talk over a quiet game suits the spotlight.	游戏画面平静、以说话为主，适合模型特写。
+	The clip fills {pct} % of the screen the app leaves.	片段占据了应用留出屏幕的 {pct}%。
+	The gameplay is shown at {pct} % of its size in the stream.	游戏画面以其在直播中大小的 {pct}% 显示。
+	The model is only as big as it is in the stream.	模型只和直播中一样大。
+	The picture behind the captions is {pct} % busy.	字幕后面的画面繁杂度为 {pct}%。
+	The spotlight needs a model.	模型特写需要有模型。
+	The stream has no captions of its own.	直播本身没有字幕。
+	The stream's own captions are cut off.	直播自带的字幕已被裁掉。
+	The stream's own captions show under the new ones.	直播自带的字幕出现在新字幕下方。
+	The whole picture, for clips where everything matters.	完整画面，适合每处都重要的片段。
+	Trim, bleep swears and loop ending	裁剪、哔掉脏话和循环结尾
+	Trimmed to {len}	已裁剪到 {len}
+	Try formats and layouts	尝试各种格式和布局
+	Use this	使用这个
+	{name}{cut}, {score}/100	{name}{cut}，{score}/100
+	Bleeps: {n}	哔声：{n}
+	Moments: {n}	时刻：{n}
+	Punch-ins: {n}	推近：{n}
+	{pct} % of the model's face is in view.	模型的脸有 {pct}% 可见。
+	{pct} % of the text is under the app's buttons or bars.	有 {pct}% 的文字被应用的按钮或栏挡住。

@@ -225,6 +225,13 @@ struct Opts {
     moments: usize,
     each: f64,
     background: Option<String>,
+    /// The gameplay part of the recording, when not the layout's (Auto Edit cuts off a stream's
+    /// burned-in captions this way).
+    game: Option<[f64; 4]>,
+    /// Bleep swear words (when the sequence has no bleeps yet).
+    bleep: bool,
+    /// Punch in and shake on the loud moments.
+    hype: bool,
 }
 
 impl Opts {
@@ -277,6 +284,9 @@ impl Opts {
             moments,
             each: num_p(p, "momentSeconds", 8.0, 3.0, 30.0, cmd)?,
             background,
+            game: crate::shorts::fractions_p(p, "game", cmd)?,
+            bleep: bool_p(p, "bleep").unwrap_or(false),
+            hype: bool_p(p, "hype").unwrap_or(false),
         })
     }
 
@@ -293,7 +303,12 @@ impl Opts {
             "loopSeconds": self.loop_seconds,
             "moments": self.moments,
             "momentSeconds": self.each,
+            "bleep": self.bleep,
+            "hype": self.hype,
         });
+        if let Some(g) = self.game {
+            v["game"] = json!(g);
+        }
         if let Some(s) = &self.side {
             v["side"] = json!(s);
         }
@@ -372,10 +387,20 @@ pub(crate) fn format(s: &mut Session, p: &Value, default: Option<(Platform, Form
             crate::shorts_trim::trim_to(s, Tick::from_seconds_f64(o.seconds), cmd)?;
         }
         let placed = arrange(s, &o, cmd)?;
+        // swear words (once: a sequence bleeped before keeps its bleeps); none is fine
+        if o.bleep && has_words && !crate::shorts_fx::has_bleeps(s) {
+            let _ = s.execute("shorts.bleep", json!({}));
+        }
         if o.loop_end {
             crate::shorts_trim::apply_loop(s, o.loop_seconds, cmd)?;
         }
         graphics(s, &o, &placed, &moments)?;
+        // the loud moments, about one every 8 seconds; a clip with none stands out is fine too
+        if o.hype {
+            let secs = s.active_sequence().map(|q| q.duration().seconds()).unwrap_or(0.0);
+            let n = (secs / 8.0).round().clamp(1.0, 12.0);
+            let _ = s.execute("shorts.hype", json!({"effects": ["punch", "shake"], "maxMoments": n}));
+        }
         if want_captions {
             captions(s, &o, &placed, cmd)?;
         }
@@ -441,6 +466,9 @@ fn arrange(s: &mut Session, o: &Opts, cmd: &str) -> Result<Placed> {
                 base[k] = v.clone();
             }
         }
+    }
+    if let Some(g) = o.game {
+        base["game"] = json!(g);
     }
     if o.format == Format::Meme {
         base["background"] = json!("black");

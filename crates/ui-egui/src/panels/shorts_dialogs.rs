@@ -35,6 +35,12 @@ pub struct Draft {
     pub origin: Option<u64>,
     pub before: String,
     pub result: Value,
+    /// Auto Edit: frames left before the run starts (so "Checking…" shows first), and the
+    /// version to make (`pick`), if one was chosen from the report.
+    #[serde(skip)]
+    pending: u8,
+    #[serde(skip)]
+    pick: Option<Value>,
 }
 
 /// `UiState::shorts`: the open Shorts windows.
@@ -44,6 +50,7 @@ pub struct ShortsUi {
     pub layout: Option<Draft>,
     pub captions: Option<Draft>,
     pub format: Option<Draft>,
+    pub auto: Option<Draft>,
 }
 
 fn open(app: &mut FilmcraftApp, current: Value) -> Draft {
@@ -63,7 +70,7 @@ pub fn route(app: &mut FilmcraftApp, id: &str, params: &Value) -> Option<Result<
         return Some(export_for(app, &pf));
     }
     let empty = params.as_object().is_none_or(|m| m.is_empty());
-    if !empty || !matches!(id, "shorts.layout" | "shorts.captions" | "shorts.format") {
+    if !empty || !matches!(id, "shorts.layout" | "shorts.captions" | "shorts.format" | "shorts.autoEdit") {
         return None;
     }
     if let Some(c) = filmcraft_engine::find_command(id)
@@ -72,7 +79,14 @@ pub fn route(app: &mut FilmcraftApp, id: &str, params: &Value) -> Option<Result<
         app.ui.status = e.clone();
         return Some(Err(e));
     }
-    if id == "shorts.format" {
+    if id == "shorts.autoEdit" {
+        let cur = filmcraft_engine::shorts_auto::current(&app.session);
+        let mut d = open(app, cur);
+        d.origin = app.session.state.active_sequence.map(|i| i.0);
+        d.before = app.ui.program.safe_zone.clone();
+        app.ui.shorts.auto = Some(d);
+        Some(Ok(json!({"dialog": "shortsAuto"})))
+    } else if id == "shorts.format" {
         let cur = filmcraft_engine::shorts_formats::current(&app.session);
         let mut d = open(app, cur);
         d.origin = app.session.state.active_sequence.map(|i| i.0);
@@ -249,6 +263,9 @@ fn revert(app: &mut FilmcraftApp, d: &Draft) {
 
 /// The windows (call once per frame).
 pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
+    if app.ui.shorts.auto.is_some() {
+        auto_window(app, ctx);
+    }
     if app.ui.shorts.format.is_some() {
         formats_window(app, ctx);
     }
@@ -895,5 +912,257 @@ fn formats_window(app: &mut FilmcraftApp, ctx: &egui::Context) {
             }
         }
         _ => app.ui.shorts.format = Some(d),
+    }
+}
+
+// -------------------------------------------------------------------------------------------
+// Auto Edit
+// -------------------------------------------------------------------------------------------
+
+/// A format's name as the interface shows it.
+fn format_name(id: &str) -> &'static str {
+    match id {
+        "fullFrame" => tl!("Full Frame + Blur"),
+        "meme" => tl!("Meme Caption Bar"),
+        "spotlight" => tl!("Model Spotlight"),
+        "countdown" => tl!("Top Moments Countdown"),
+        _ => tl!("Gameplay + Model"),
+    }
+}
+
+/// What a check of Auto Edit found, in the interface's language.
+fn check_note(c: &Value) -> String {
+    let pct = format!("{:.0}", c["value"].as_f64().unwrap_or(0.0) * 100.0);
+    match (c["id"].as_str().unwrap_or(""), c["kind"].as_str().unwrap_or("")) {
+        ("textClear", "clear") => tl!("All text is clear of the app's buttons and bars.").to_string(),
+        ("textClear", _) => tlf!("{pct} % of the text is under the app's buttons or bars.", pct),
+        ("modelInView", "face") => tlf!("{pct} % of the model's face is in view.", pct),
+        ("modelInView", "small") => tl!("The model is only as big as it is in the stream.").to_string(),
+        ("modelInView", "missing") => tl!("No model was found in the stream, so the model box may show gameplay.").to_string(),
+        ("modelInView", _) => tl!("No model in the stream: the whole picture is shown.").to_string(),
+        ("screenUsed", _) => tlf!("The clip fills {pct} % of the screen the app leaves.", pct),
+        ("gameplaySize", _) => tlf!("The gameplay is shown at {pct} % of its size in the stream.", pct),
+        ("fitsClip", "spotlight") => tl!("Talk over a quiet game suits the spotlight.").to_string(),
+        ("fitsClip", "noModel") => tl!("The spotlight needs a model.").to_string(),
+        ("fitsClip", "gameplay") => tl!("Game action suits big gameplay.").to_string(),
+        ("fitsClip", _) => tl!("The whole picture, for clips where everything matters.").to_string(),
+        ("captionClash", "clash") => tl!("The stream's own captions show under the new ones.").to_string(),
+        ("captionClash", "cut") => tl!("The stream's own captions are cut off.").to_string(),
+        ("captionClash", _) => tl!("The stream has no captions of its own.").to_string(),
+        ("readable", "busy") => tlf!("The picture behind the captions is {pct} % busy.", pct),
+        _ => tl!("No captions.").to_string(),
+    }
+}
+
+/// What Auto Edit did, in the interface's language.
+fn step_note(st: &Value) -> String {
+    let n = st["count"].as_u64().unwrap_or(0);
+    match st["id"].as_str().unwrap_or("") {
+        "trimmed" => tlf!("Trimmed to {len}", len = filmcraft_engine::shorts_formats::clock(st["seconds"].as_f64().unwrap_or(0.0))),
+        "bleeped" => tlf!("Bleeps: {n}", n),
+        "punchIns" => tlf!("Punch-ins: {n}", n),
+        "countdown" => tlf!("Moments: {n}", n),
+        "captions" => tl!("Captions and hook title").to_string(),
+        "loop" => tl!("Loop ending").to_string(),
+        _ => String::new(),
+    }
+}
+
+/// Run Auto Edit again from where the window was opened.
+fn auto_run(app: &mut FilmcraftApp, d: &mut Draft) {
+    revert(app, d);
+    restore_origin(app, d);
+    let mut p = d.params.clone();
+    if let Some(pick) = d.pick.take() {
+        p["pick"] = pick;
+    }
+    match app.session.execute("shorts.autoEdit", p) {
+        Ok(v) => {
+            d.error.clear();
+            if let Some(pf) = v.get("platform").and_then(Value::as_str) {
+                app.ui.program.safe_zone = pf.to_string();
+            }
+            d.result = v;
+            d.applied = d.params.clone();
+        }
+        Err(e) => {
+            d.error = e.to_string();
+            d.result = Value::Null;
+        }
+    }
+}
+
+fn auto_window(app: &mut FilmcraftApp, ctx: &egui::Context) {
+    let Some(mut d) = app.ui.shorts.auto.clone() else { return };
+    let pre = "shortsAuto";
+    let mut elems: Elems = Vec::new();
+    let mut action = None;
+    let mut run = false;
+    let mut pick: Option<Value> = None;
+    let has_words = !filmcraft_engine::transcript::sequence_words(&app.session).is_empty();
+    egui::Window::new(tl!("Auto Edit")).id(egui::Id::new("shorts-auto")).collapsible(false).resizable(false).default_width(480.0).show(ctx, |ui| {
+        ui.label(RichText::new(tl!("Auto Edit tries several versions of the short, checks each one and keeps the best.")).weak());
+        let p = &mut d.params;
+        radios(ui, &mut elems, pre, p, "platform", tl!("Platform:"), &[("youtube", tl!("YouTube Shorts")), ("tiktok", tl!("TikTok"))]);
+        ui.horizontal(|ui| {
+            ui.add_sized([150.0, 18.0], egui::Label::new(tl!("Length:")));
+            let cur = p.get("length").cloned().unwrap_or(json!("auto"));
+            for (k, label) in [
+                (json!("auto"), tl!("Automatic").to_string()),
+                (json!("keep"), tl!("Keep").to_string()),
+                (json!(15), "15 s".into()),
+                (json!(30), "30 s".into()),
+                (json!(60), "60 s".into()),
+            ] {
+                let sel = cur == k || (cur.as_f64().is_some() && cur.as_f64() == k.as_f64());
+                let r = ui.radio(sel, label.as_str());
+                let key = k.as_str().map(str::to_string).unwrap_or_else(|| k.to_string());
+                elems.push((format!("{pre}.length.{key}"), r.rect, label.clone()));
+                if r.clicked() {
+                    p["length"] = k;
+                }
+            }
+        });
+        text(ui, &mut elems, pre, p, "title", tl!("Hook title:"), "WAIT FOR IT…");
+        check(ui, &mut elems, pre, p, "tryFormats", tl!("Try formats and layouts"));
+        ui.add_enabled_ui(has_words, |ui| check(ui, &mut elems, pre, p, "captions", tl!("Captions and hook title")));
+        if !has_words {
+            ui.label(RichText::new(tl!("Transcribe the clip first to add captions (Sequence ▸ Transcript ▸ Transcribe…).")).weak().small());
+        }
+        check(ui, &mut elems, pre, p, "hype", tl!("Punch-ins on loud moments"));
+        check(ui, &mut elems, pre, p, "finish", tl!("Trim, bleep swears and loop ending"));
+        ui.add_space(4.0);
+        if d.pending > 0 {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(tl!("Checking versions…"));
+            });
+        } else {
+            let label = if d.result.is_null() { tl!("Auto Edit") } else { tl!("Auto Edit again") };
+            let r = ui.add(egui::Button::new(RichText::new(label).strong()).min_size(egui::vec2(140.0, 26.0)));
+            elems.push((format!("{pre}.run"), r.rect, "Auto Edit".into()));
+            if r.clicked() {
+                run = true;
+            }
+        }
+        // the report
+        let res = d.result.clone();
+        if let Some(versions) = res["versions"].as_array() {
+            let picked = res["picked"].as_u64().unwrap_or(0) as usize;
+            ui.separator();
+            if let Some(v) = versions.get(picked) {
+                let cut = if v["crop"] == true { tl!(" (stream captions cut off)") } else { "" };
+                let score = v["score"].as_f64().unwrap_or(0.0).round() as i64;
+                ui.label(RichText::new(tlf!("Picked: {name}{cut}, {score}/100", name = format_name(v["format"].as_str().unwrap_or("")), cut, score)).strong());
+                for (i, c) in v["checks"].as_array().cloned().unwrap_or_default().iter().enumerate() {
+                    let ok = c["ok"] == true;
+                    let mark = if ok { "✓" } else { "⚠" };
+                    let note = check_note(c);
+                    let line = format!("{mark} {note}  ({:.0}/{:.0})", c["points"].as_f64().unwrap_or(0.0), c["max"].as_f64().unwrap_or(0.0));
+                    let t = if ok { RichText::new(line) } else { RichText::new(line).color(ui.visuals().warn_fg_color) };
+                    let r = ui.label(t.small());
+                    elems.push((format!("{pre}.check.{i}"), r.rect, note));
+                }
+            }
+            let steps: Vec<String> = res["steps"].as_array().cloned().unwrap_or_default().iter().map(step_note).filter(|x| !x.is_empty()).collect();
+            if !steps.is_empty() {
+                ui.label(RichText::new(steps.join(" · ")).small());
+            }
+            if versions.len() > 1 {
+                ui.label(RichText::new(tl!("Also tried:")).weak());
+                for (i, v) in versions.iter().enumerate().filter(|(i, _)| *i != picked) {
+                    ui.horizontal(|ui| {
+                        let cut = if v["crop"] == true { tl!(" (stream captions cut off)") } else { "" };
+                        let line = match v["error"].as_str() {
+                            Some(e) => format!("{}{cut}: {e}", format_name(v["format"].as_str().unwrap_or(""))),
+                            None => tlf!(
+                                "{name}{cut}, {score}/100",
+                                name = format_name(v["format"].as_str().unwrap_or("")),
+                                cut,
+                                score = v["score"].as_f64().unwrap_or(0.0).round() as i64
+                            ),
+                        };
+                        ui.label(RichText::new(line).small());
+                        if v.get("error").is_none() {
+                            let r = ui.small_button(tl!("Use this"));
+                            elems.push((format!("{pre}.use.{i}"), r.rect, "Use this".into()));
+                            if r.clicked() {
+                                pick = Some(json!({"format": v["format"], "side": v["side"], "crop": v["crop"]}));
+                            }
+                        }
+                    });
+                }
+            }
+            if let (Some(secs), Some(pf)) = (res["seconds"].as_f64(), res["platform"].as_str().and_then(filmcraft_engine::shorts_formats::platform)) {
+                for (i, (note, warn)) in length_notes(&pf, secs).into_iter().enumerate() {
+                    let line = if warn { RichText::new(&note).color(ui.visuals().warn_fg_color) } else { RichText::new(&note) };
+                    let r = ui.label(line);
+                    elems.push((format!("{pre}.note.{i}"), r.rect, note));
+                }
+                let r = ui.button(tlf!("Export for {name}…", name = platform_name(&pf)));
+                elems.push((format!("{pre}.export"), r.rect, "Export".into()));
+                if r.clicked() {
+                    action = Some("export");
+                }
+            }
+        }
+        if !d.error.is_empty() {
+            ui.label(RichText::new(&d.error).color(ui.visuals().error_fg_color));
+        }
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let r = ui.button(tl!("OK"));
+                elems.push((format!("{pre}.ok"), r.rect, "OK".into()));
+                if r.clicked() {
+                    action = Some("ok");
+                }
+                let r = ui.button(tl!("Cancel"));
+                elems.push((format!("{pre}.cancel"), r.rect, "Cancel".into()));
+                if r.clicked() {
+                    action = Some("cancel");
+                }
+            });
+        });
+    });
+    for (id, r, l) in elems {
+        app.auto.add(&id, r, &l);
+    }
+    if crate::widgets::escape_closes(ctx) {
+        action = Some("cancel");
+    }
+    // a run starts a frame after "Checking versions…" is shown
+    if run || pick.is_some() {
+        d.pick = pick;
+        d.pending = 2;
+        ctx.request_repaint();
+    } else if d.pending > 0 {
+        d.pending -= 1;
+        if d.pending == 0 {
+            auto_run(app, &mut d);
+        }
+        ctx.request_repaint();
+    }
+    match action {
+        Some("cancel") => {
+            revert(app, &d);
+            restore_origin(app, &d);
+            app.ui.program.safe_zone = d.before.clone();
+            app.ui.shorts.auto = None;
+        }
+        Some("ok") => {
+            // OK before any run: run it now
+            if d.result.is_null() {
+                auto_run(app, &mut d);
+            }
+            app.ui.shorts.auto = None;
+        }
+        Some("export") => {
+            app.ui.shorts.auto = None;
+            if let Some(pf) = d.result["platform"].as_str().and_then(filmcraft_engine::shorts_formats::platform) {
+                let _ = export_for(app, &pf);
+            }
+        }
+        _ => app.ui.shorts.auto = Some(d),
     }
 }
