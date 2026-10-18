@@ -1,4 +1,4 @@
-//! Sequence ▸ Shorts ▸ Word Captions…: animated captions from the transcript, one graphic clip per
+//! Shorts ▸ Word Captions…: animated captions from the transcript, one graphic clip per
 //! spoken word on a **Word Captions** track, every part of the look adjustable.
 //!
 //! - **Style** of the spoken word: `pop` (it changes colour and grows), `karaoke` (words light up
@@ -9,7 +9,8 @@
 //! - **Colours**: text, highlight, highlighted text (box), outline (width and colour), shadow,
 //!   background box (colour, opacity).
 //! - **Position** (`x`, `y`, fractions of the frame; by default just under the gameplay of a
-//!   Shorts layout) and **animation** of each phrase (`pop`, `bounce`, `fade`, `slide`, `none`).
+//!   Shorts layout), the widest a phrase may be (`width`), and **animation** of each phrase
+//!   (`pop`, `bounce`, `fade`, `slide`, `none`).
 //!
 //! Applying again replaces the previous Word Captions (`replace`), and `live` folds repeated
 //! applications into one undo step, so the Word Captions… dialog previews as options change.
@@ -39,7 +40,7 @@ pub(crate) enum Style {
 }
 
 impl Style {
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Style::Pop => "pop",
             Style::Karaoke => "karaoke",
@@ -48,7 +49,7 @@ impl Style {
             Style::Plain => "plain",
         }
     }
-    fn parse(s: &str) -> Option<Style> {
+    pub(crate) fn parse(s: &str) -> Option<Style> {
         Some(match s {
             "pop" => Style::Pop,
             "karaoke" => Style::Karaoke,
@@ -121,6 +122,8 @@ pub(crate) struct Opts {
     radius: f64,
     x: f64,
     y: f64,
+    /// The widest a phrase may be, as a fraction of the frame width (wider ones shrink).
+    width: f64,
     anim: Anim,
     hold: f64,
     speaker_colors: bool,
@@ -165,6 +168,7 @@ impl Opts {
             radius: 22.0,
             x: 0.5,
             y,
+            width: 0.92,
             anim: Anim::Pop,
             hold: 0.25,
             speaker_colors: false,
@@ -227,6 +231,7 @@ impl Opts {
         }
         o.x = num_p(p, "x", o.x, 0.0, 1.0, cmd)?;
         o.y = num_p(p, "y", o.y, 0.0, 1.0, cmd)?;
+        o.width = num_p(p, "width", o.width, 0.2, 1.0, cmd)?;
         if let Some(a) = str_p(p, "animation") {
             o.anim = Anim::parse(a).ok_or_else(|| bad(cmd, format!("unknown animation `{a}` (pop, bounce, fade, slide, none)")))?;
         }
@@ -274,6 +279,7 @@ impl Opts {
             "radius": self.radius,
             "x": self.x,
             "y": self.y,
+            "width": self.width,
             "animation": self.anim.name(),
             "hold": self.hold,
             "speakerColors": self.speaker_colors,
@@ -360,7 +366,7 @@ fn entrance(anim: Anim, frame: Tick, at: Vec2, rise: f64) -> (Option<Param>, Opt
 
 /// The laid-out bounds of a text layer and, for character range `hl`, the box around it, in
 /// layer pixels.
-fn measure(layer: &EffectInstance, frame: (u32, u32), hl: Option<std::ops::Range<usize>>) -> Option<([f32; 4], Option<[f32; 4]>)> {
+pub(crate) fn measure(layer: &EffectInstance, frame: (u32, u32), hl: Option<std::ops::Range<usize>>) -> Option<([f32; 4], Option<[f32; 4]>)> {
     let spec = filmcraft_project::graphic::eval_layer(layer, Tick::ZERO, frame)?;
     let LayerContent::Text(tp) = &spec.content else { return None };
     let lay = filmcraft_render::graphic_clip::text_layout(tp);
@@ -428,12 +434,19 @@ pub(crate) fn captions(s: &mut Session, p: &Value, default_style: Style, cmd: &s
             i => SPEAKER_COLORS.get(i).copied().unwrap_or(o.color),
         }
     };
+    // captions end with the picture and sound (the hold after the last word must not make the
+    // sequence longer: a short cut to exactly a minute stays a minute)
+    let limit = q.video_tracks.iter().filter(|t| t.name != TRACK).chain(q.audio_tracks.iter()).map(filmcraft_project::Track::end).max().unwrap_or(Tick::ZERO);
     let px = fw / 1080.0;
     let frame_dur = rate.frame_duration().max(Tick(1));
     let at = Vec2::new(o.x * fw, o.y * fh);
     let mut clips: Vec<(Tick, Tick, String, Vec<EffectInstance>)> = Vec::with_capacity(spans.len());
     let mut prev_beat = None;
     for sp in &spans {
+        if sp.start >= limit {
+            continue;
+        }
+        let sp_end = sp.end.min(limit);
         let Some(beat) = beats.get(sp.beat).cloned() else { continue };
         let (text, ranges) = match o.style {
             Style::OneWord => sh::beat_text(&shown, sp.word..sp.word.saturating_add(1), false),
@@ -501,11 +514,11 @@ pub(crate) fn captions(s: &mut Session, p: &Value, default_style: Style, cmd: &s
             layer
         };
         let mut layer = make(size);
-        // shrink to fit 92 % of the frame width
+        // shrink to fit the width allowed (92 % of the frame unless set)
         if let Some((b, _)) = measure(&layer, (w, h), None) {
             let width = f64::from(b[2] - b[0]);
-            if width > fw * 0.92 && width > 0.0 {
-                size = (size * fw * 0.92 / width).max(4.0);
+            if width > fw * o.width && width > 0.0 {
+                size = (size * fw * o.width / width).max(4.0);
                 layer = make(size);
             }
         }
@@ -544,7 +557,7 @@ pub(crate) fn captions(s: &mut Session, p: &Value, default_style: Style, cmd: &s
             layers.push(boxl);
         }
         layers.push(layer);
-        clips.push((sp.start, Tick(sp.end.0.saturating_sub(sp.start.0)), text.replace('\n', " "), layers));
+        clips.push((sp.start, Tick(sp_end.0.saturating_sub(sp.start.0)), text.replace('\n', " "), layers));
     }
     let replace = bool_p(p, "replace").unwrap_or(true);
     let live = bool_p(p, "live").unwrap_or(false);

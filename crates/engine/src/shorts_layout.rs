@@ -1,4 +1,4 @@
-//! Sequence ▸ Shorts ▸ Layout…: arranges a widescreen stream recording in a vertical frame.
+//! Shorts ▸ Layout…: arranges a widescreen stream recording in a vertical frame.
 //!
 //! Three pieces, each adjustable:
 //! - the **gameplay pane**: a window on the gameplay (by default everything beside the model),
@@ -9,9 +9,10 @@
 //! - a **background**: a blurred, darkened copy of the recording behind both (or black).
 //!
 //! Presets set every value at once: `stack` (gameplay with the model below it), `split` (two
-//! full-width panes, the model pane under the gameplay) and `pip` (taller gameplay with the model
-//! in a corner over it). Applying again replaces the previous layout of the same clips, so the
-//! Layout… dialog can re-apply live while sliders move.
+//! full-width panes, the model pane under the gameplay), `pip` (taller gameplay with the model
+//! in a corner over it), `spotlight` (the model large, the gameplay in a smaller card above it)
+//! and `full` (the whole recording, no model box). Applying again replaces the previous layout of
+//! the same clips, so the Layout… dialog can re-apply live while sliders move.
 
 use filmcraft_edit::shorts::{self as sh, Placement, Rect};
 use filmcraft_project::{ClipId, ParamValue, TrackItem};
@@ -34,6 +35,20 @@ pub(crate) enum Preset {
     Stack,
     Split,
     Pip,
+    Spotlight,
+    Full,
+}
+
+impl Preset {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Preset::Stack => "stack",
+            Preset::Split => "split",
+            Preset::Pip => "pip",
+            Preset::Spotlight => "spotlight",
+            Preset::Full => "full",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,7 +58,7 @@ pub(crate) enum Side {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Background {
+pub(crate) enum Background {
     Blur,
     Black,
 }
@@ -57,6 +72,8 @@ pub(crate) struct Spec {
     pub game: [f64; 4],
     /// How much of the gameplay's width the pane keeps (0.3 … 1).
     pub game_width: f64,
+    /// The pane's width as a fraction of the frame's (0.3 … 1; narrower panes are centred).
+    pub game_size: f64,
     /// Where in the gameplay the kept window sits: −1 left edge … 0 centre … 1 right edge.
     pub game_pan: f64,
     /// The pane's centre, as a fraction of the frame height.
@@ -73,7 +90,9 @@ pub(crate) struct Spec {
     pub game_corner: f64,
     pub border: f64,
     pub border_color: [f32; 4],
-    background: Background,
+    /// Whether the model gets a box of its own (the `full` preset has none).
+    pub show_model: bool,
+    pub background: Background,
 }
 
 /// The model's place in a typical stream layout: the outer 30 % of the width, from a third of
@@ -120,6 +139,7 @@ impl Spec {
                     side,
                     game,
                     game_width: 1.0,
+                    game_size: 1.0,
                     game_pan: 0.0,
                     game_y: top + pane_h / 2.0,
                     model,
@@ -131,6 +151,7 @@ impl Spec {
                     game_corner: 0.0,
                     border: 0.0,
                     border_color: [1.0, 1.0, 1.0, 1.0],
+                    show_model: true,
                     background: Background::Blur,
                 }
             }
@@ -143,6 +164,7 @@ impl Spec {
                     side,
                     game,
                     game_width,
+                    game_size: 1.0,
                     game_pan: 0.0,
                     game_y: split / 2.0,
                     model,
@@ -154,6 +176,7 @@ impl Spec {
                     game_corner: 0.0,
                     border: 0.0,
                     border_color: [1.0, 1.0, 1.0, 1.0],
+                    show_model: true,
                     background: Background::Blur,
                 }
             }
@@ -170,6 +193,7 @@ impl Spec {
                     side,
                     game,
                     game_width,
+                    game_size: 1.0,
                     game_pan: 0.0,
                     game_y,
                     model,
@@ -181,6 +205,60 @@ impl Spec {
                     game_corner: 0.0,
                     border: 6.0,
                     border_color: [1.0, 1.0, 1.0, 1.0],
+                    show_model: true,
+                    background: Background::Blur,
+                }
+            }
+            Preset::Spotlight => {
+                // the model large (half the frame tall), the gameplay in a rounded card two
+                // thirds of the frame wide above it; the two centred together
+                let game_size = 0.66;
+                let card_h = (game_size * fw * gh / gw.max(1.0) / fh).min(0.5);
+                let model_h = 0.5;
+                let model_w = (model_h * fh * model_aspect / fw).min(0.95);
+                let gap = 0.015;
+                let top = ((1.0 - (card_h + gap + model_h)) / 2.0).max(0.0);
+                Spec {
+                    preset,
+                    side,
+                    game,
+                    game_width: 1.0,
+                    game_size,
+                    game_pan: 0.0,
+                    game_y: top + card_h / 2.0,
+                    model,
+                    model_w,
+                    model_h,
+                    model_x: 0.5,
+                    model_y: (top + card_h + gap + model_h / 2.0).min(1.0 - model_h / 2.0),
+                    corner: 28.0,
+                    game_corner: 24.0,
+                    border: 0.0,
+                    border_color: [1.0, 1.0, 1.0, 1.0],
+                    show_model: true,
+                    background: Background::Blur,
+                }
+            }
+            Preset::Full => {
+                // the whole recording across the frame, nothing cut off and no model box
+                Spec {
+                    preset,
+                    side,
+                    game: [0.0, 0.0, 1.0, 1.0],
+                    game_width: 1.0,
+                    game_size: 1.0,
+                    game_pan: 0.0,
+                    game_y: 0.5,
+                    model,
+                    model_w: 0.4,
+                    model_h: 0.3,
+                    model_x: 0.5,
+                    model_y: 0.8,
+                    corner: 28.0,
+                    game_corner: 0.0,
+                    border: 0.0,
+                    border_color: [1.0, 1.0, 1.0, 1.0],
+                    show_model: false,
                     background: Background::Blur,
                 }
             }
@@ -194,7 +272,9 @@ impl Spec {
             Some("stack") => Preset::Stack,
             Some("split") => Preset::Split,
             Some("pip") => Preset::Pip,
-            Some(o) => return Err(bad(cmd, format!("unknown preset `{o}` (stack, split, pip)"))),
+            Some("spotlight") => Preset::Spotlight,
+            Some("full") => Preset::Full,
+            Some(o) => return Err(bad(cmd, format!("unknown preset `{o}` (stack, split, pip, spotlight, full)"))),
         };
         let side = match str_p(p, "side") {
             None => default.1,
@@ -220,6 +300,7 @@ impl Spec {
             s.model_y = split + (1.0 - split) / 2.0;
         }
         s.game_width = num_p(p, "gameWidth", s.game_width, 0.3, 1.0, cmd)?;
+        s.game_size = num_p(p, "gameSize", s.game_size, 0.3, 1.0, cmd)?;
         s.game_pan = num_p(p, "gamePan", s.game_pan, -1.0, 1.0, cmd)?;
         s.game_y = num_p(p, "gameY", s.game_y, 0.0, 1.0, cmd)?;
         s.model_w = num_p(p, "modelWidth", s.model_w, 0.05, 1.0, cmd)?;
@@ -232,6 +313,7 @@ impl Spec {
         if let Some(c) = color_p(p, "borderColor", cmd)? {
             s.border_color = c;
         }
+        s.show_model = crate::commands::bool_p(p, "showModel").unwrap_or(s.show_model);
         s.background = match str_p(p, "background") {
             None => s.background,
             Some("blur") => Background::Blur,
@@ -244,10 +326,11 @@ impl Spec {
     /// The values as command parameters (what the Layout… dialog edits).
     pub(crate) fn to_json(&self) -> Value {
         json!({
-            "preset": match self.preset { Preset::Stack => "stack", Preset::Split => "split", Preset::Pip => "pip" },
+            "preset": self.preset.name(),
             "side": match self.side { Side::Right => "right", Side::Left => "left" },
             "game": self.game,
             "gameWidth": self.game_width,
+            "gameSize": self.game_size,
             "gamePan": self.game_pan,
             "gameY": self.game_y,
             "model": self.model,
@@ -264,8 +347,15 @@ impl Spec {
                 (self.border_color[1].clamp(0.0, 1.0) * 255.0).round() as u8,
                 (self.border_color[2].clamp(0.0, 1.0) * 255.0).round() as u8
             ),
+            "showModel": self.show_model,
             "background": match self.background { Background::Blur => "blur", Background::Black => "black" },
         })
+    }
+
+    /// The gameplay pane and the model box (`None` without one) in frame pixels.
+    pub(crate) fn rects(&self, frame: (f64, f64), src: (f64, f64)) -> (Rect, Option<Rect>) {
+        let (_, pane, _, boxr) = self.geometry(frame, src);
+        (pane, self.show_model.then_some(boxr))
     }
 
     /// The gameplay window and pane, and the model region and box, in display pixels of a
@@ -278,10 +368,12 @@ impl Spec {
         let slack = (region.w - ww).max(0.0);
         let wx = region.x + slack * (self.game_pan + 1.0) / 2.0;
         let window = Rect::new(wx, region.y, ww, region.h);
-        // the pane: full frame width, the window's shape (never taller than the frame)
-        let ph = (fw * window.h / window.w).min(fh);
+        // the pane: `game_size` of the frame width, centred, the window's shape (never taller
+        // than the frame)
+        let pw = (fw * self.game_size).clamp(1.0, fw.max(1.0));
+        let ph = (pw * window.h / window.w).min(fh);
         let cy = (self.game_y * fh).clamp(ph / 2.0, fh - ph / 2.0);
-        let pane = Rect::new(0.0, cy - ph / 2.0, fw, ph);
+        let pane = Rect::new((fw - pw) / 2.0, cy - ph / 2.0, pw, ph);
         let model = Rect::from_fractions(self.model, src.0, src.1);
         let (bw, bh) = ((self.model_w * fw).max(2.0), (self.model_h * fh).max(2.0));
         let bx = (self.model_x * fw).clamp(bw / 2.0, (fw - bw / 2.0).max(bw / 2.0));
@@ -334,7 +426,9 @@ fn background_copy(it: &TrackItem, id: u64, storage: (f64, f64), display: (f64, 
 /// picture track. Copies a layout made are never targets.
 fn targets(s: &Session, p: &Value) -> Vec<ClipId> {
     let Some(q) = s.active_sequence() else { return Vec::new() };
-    let ok = |i: &TrackItem| is_footage(&s.project, i) && !i.name.ends_with(MODEL_SUFFIX) && !i.name.ends_with(BACKGROUND_SUFFIX);
+    let ok = |i: &TrackItem| {
+        is_footage(&s.project, i) && !i.name.ends_with(MODEL_SUFFIX) && !i.name.ends_with(BACKGROUND_SUFFIX) && !crate::shorts_trim::is_loop_hold(i)
+    };
     let picked: Vec<ClipId> = clips_p(s, p).into_iter().filter(|c| q.video_tracks.iter().any(|t| t.item(*c).is_some_and(ok))).collect();
     if !picked.is_empty() {
         return picked;
@@ -343,18 +437,34 @@ fn targets(s: &Session, p: &Value) -> Vec<ClipId> {
     main.and_then(|b| q.video_tracks.get(b)).map(|t| t.items.iter().filter(|i| ok(i)).map(|i| i.id).collect()).unwrap_or_default()
 }
 
-/// The bottom edge of the gameplay pane of the last layout applied (fraction of the frame height),
-/// for captions to sit on.
-pub(crate) fn game_pane_bottom(s: &Session) -> Option<f64> {
+/// The display size of the recording a layout of the active sequence arranges (its first target).
+pub(crate) fn source_size(s: &Session) -> Option<(f64, f64)> {
+    let q = s.active_sequence()?;
+    let c = targets(s, &json!({})).into_iter().next()?;
+    let it = q.video_tracks.iter().find_map(|t| t.item(c))?;
+    picture_sizes(&s.project, it, q.settings.par).map(|(_, display)| display)
+}
+
+/// The gameplay pane and model box of the last layout applied, in fractions of the frame
+/// (`[x0, y0, x1, y1]`), for captions and titles to be placed around.
+pub(crate) fn current_rects(s: &Session) -> Option<([f64; 4], Option<[f64; 4]>)> {
     let v = s.state.shorts_layout.as_ref()?;
     let q = s.active_sequence()?;
     let frame = (f64::from(q.settings.width), f64::from(q.settings.height));
-    let c = targets(s, &json!({})).into_iter().next()?;
-    let it = q.video_tracks.iter().find_map(|t| t.item(c))?;
-    let (_, display) = picture_sizes(&s.project, it, q.settings.par)?;
+    if frame.0 < 1.0 || frame.1 < 1.0 {
+        return None;
+    }
+    let display = source_size(s)?;
     let spec = Spec::from_params(v, frame, display, "shorts.captions", (Preset::Stack, Side::Right)).ok()?;
-    let (_, pane, _, _) = spec.geometry(frame, display);
-    (frame.1 > 0.0).then(|| (pane.y + pane.h) / frame.1)
+    let (pane, model) = spec.rects(frame, display);
+    let frac = |r: Rect| [r.x / frame.0, r.y / frame.1, (r.x + r.w) / frame.0, (r.y + r.h) / frame.1];
+    Some((frac(pane), model.map(frac)))
+}
+
+/// The bottom edge of the gameplay pane of the last layout applied (fraction of the frame height),
+/// for captions to sit on.
+pub(crate) fn game_pane_bottom(s: &Session) -> Option<f64> {
+    current_rects(s).map(|(pane, _)| pane[3])
 }
 
 /// The layout the Layout… dialog opens with: the values last applied in this session, or the
@@ -390,6 +500,11 @@ pub(crate) fn layout(s: &mut Session, p: &Value, default: (Preset, Side), cmd: &
     let live = crate::commands::bool_p(p, "live").unwrap_or(false);
     let label = "Layout";
     let run = |q: &mut filmcraft_project::Sequence, ctx: &mut filmcraft_edit::EditCtx, st: &mut crate::EditorState| -> Result<Value> {
+        // a Loop Ending is made again afterwards, from the new layout
+        let looped = crate::shorts_trim::loop_seconds(q);
+        if looped.is_some() {
+            crate::shorts_trim::remove_loop(q);
+        }
         // the previous layout of these clips goes: its model and background copies
         let shapes: Vec<(filmcraft_project::ItemId, filmcraft_time::Tick, filmcraft_time::Tick)> =
             plans.iter().filter_map(|(c, _, _)| q.find_item(*c).map(|(_, i)| (i.item, i.start, i.duration))).collect();
@@ -412,30 +527,46 @@ pub(crate) fn layout(s: &mut Session, p: &Value, default: (Preset, Side), cmd: &
             };
             base = base.min(ti);
             apply(it, &game_pl, *storage, *display, spec.game_corner, 0.0, spec.border_color, frame.0);
-            let mut m = copy_clip(it, ctx.alloc(), MODEL_SUFFIX);
-            apply(&mut m, &model_pl, *storage, *display, spec.corner, spec.border, spec.border_color, frame.0);
             if spec.background == Background::Blur {
                 backs.push(background_copy(it, ctx.alloc(), *storage, *display, frame));
             }
-            out.push(json!({"clip": c.0, "model": m.id.0}));
-            models.push(m);
+            if spec.show_model {
+                let mut m = copy_clip(it, ctx.alloc(), MODEL_SUFFIX);
+                apply(&mut m, &model_pl, *storage, *display, spec.corner, spec.border, spec.border_color, frame.0);
+                out.push(json!({"clip": c.0, "model": m.id.0}));
+                models.push(m);
+            } else {
+                out.push(json!({"clip": c.0, "model": Value::Null}));
+            }
         }
-        if models.is_empty() {
+        if out.is_empty() {
             return Err(bad(cmd, "the selected clips have no picture to lay out"));
         }
         let base = base.min(q.video_tracks.len());
-        let mut mt = new_video_track(ctx.alloc(), MODEL_TRACK);
-        mt.items = models;
-        mt.sort();
-        q.video_tracks.insert((base + 1).min(q.video_tracks.len()), mt);
+        if !models.is_empty() {
+            let mut mt = new_video_track(ctx.alloc(), MODEL_TRACK);
+            mt.items = models;
+            mt.sort();
+            q.video_tracks.insert((base + 1).min(q.video_tracks.len()), mt);
+        }
         if !backs.is_empty() {
             let mut bt = new_video_track(ctx.alloc(), BACKGROUND_TRACK);
             bt.items = backs;
             bt.sort();
             q.video_tracks.insert(base, bt);
         }
+        if let Some(secs) = looped {
+            let footage: Vec<ClipId> = q
+                .video_tracks
+                .iter()
+                .flat_map(|t| t.items.iter())
+                .filter(|i| plans.iter().any(|(c, _, _)| *c == i.id) || i.name.ends_with(MODEL_SUFFIX) || i.name.ends_with(BACKGROUND_SUFFIX))
+                .map(|i| i.id)
+                .collect();
+            crate::shorts_trim::add_loop(q, ctx, &footage, secs);
+        }
         q.check().map_err(EngineError::Other)?;
-        st.selection = out.iter().filter_map(|o| o["model"].as_u64().map(ClipId)).collect();
+        st.selection = out.iter().filter_map(|o| o["model"].as_u64().or_else(|| o["clip"].as_u64()).map(ClipId)).collect();
         st.shorts_layout = Some(spec.to_json());
         Ok(json!({"clips": out, "layout": spec.to_json()}))
     };

@@ -3670,3 +3670,64 @@
 	Layout…	布局…
 	Word Captions…	逐词字幕…
 	Word Captions: Highlight Box	逐词字幕：高亮框
+	Formats…	格式…
+	YouTube Shorts	YouTube Shorts
+	TikTok	TikTok
+	Gameplay + Model	游戏画面 + 模型
+	Full Frame + Blur	完整画面 + 模糊
+	Meme Caption Bar	表情包文字栏
+	Model Spotlight	模型特写
+	Top Moments Countdown	精彩时刻倒数
+	Auto-Trim to Length…	自动裁剪到指定时长…
+	Loop Ending	循环结尾
+	Reframe	重新构图
+	Effects at Playhead	播放头处的效果
+	Automatic Effects	自动效果
+	Caption Styles	字幕样式
+	Sound	声音
+	Safe Zones	安全区
+	Export for YouTube Shorts…	导出为 YouTube Shorts…
+	Export for TikTok…	导出为 TikTok…
+	Auto-Trim to Length	自动裁剪到指定时长
+	Bar text:	文字栏内容：
+	Big black text on a white bar above the clip, like a meme.	片段上方白色栏中的黑色大字，像表情包一样。
+	Caption style:	字幕样式：
+	Export for {name}…	导出为 {name}…
+	Following and For You	关注和推荐
+	Format:	格式：
+	Formats	格式
+	Full frame	完整画面
+	Gameplay on top, your model in its own box below, a hook title and captions.	上方是游戏画面，下方是单独框中的模型，带吸睛标题和字幕。
+	Header:	标题栏：
+	Hook title:	吸睛标题：
+	Keep	保持
+	Keeps the liveliest part of the sequence: its loud moments, with some build-up before them. Words are never cut in half.	保留序列中最热闹的部分：响亮的时刻以及之前的铺垫。绝不会把一个词切成两半。
+	Length:	时长：
+	Like, comment and share	点赞、评论和分享
+	Loop ending (blends the end into the start)	循环结尾（将结尾融入开头）
+	Moments:	时刻数：
+	Name, caption and sound	名称、文案和声音
+	Over {limit}, {name} blocks shorts with a copyright claim: keep it under a minute if it uses copyrighted music.	超过 {limit} 时，{name} 会屏蔽有版权声明的短视频：如果使用了有版权的音乐，请控制在一分钟以内。
+	Platform:	平台：
+	Profile, like, comment and share	主页、点赞、评论和分享
+	Progress bar	进度条
+	Search and menu	搜索和菜单
+	Seconds each:	每段秒数：
+	Show the hook title	显示吸睛标题
+	Show the model in its own box	在单独的框中显示模型
+	Size on screen:	屏幕上的大小：
+	The biggest moments of a longer clip as #3, #2, #1, the best one last.	将较长片段中最精彩的时刻按 #3、#2、#1 排列，最好的放在最后。
+	The whole clip in the middle over a blurred copy, a title above and captions below.	完整片段位于中间、背景为模糊副本，上方是标题，下方是字幕。
+	Title, channel and sound	标题、频道和声音
+	Title:	标题：
+	Too long for {name}: it takes up to {max}; this is {len}.	对 {name} 来说太长了：最长 {max}，这个是 {len}。
+	Too short for {name}: it needs at least {min} seconds.	对 {name} 来说太短了：至少需要 {min} 秒。
+	Transcribe the clip first to add captions (Sequence ▸ Transcript ▸ Transcribe…).	要添加字幕，请先转录片段（序列 ▸ 转录 ▸ 转录…）。
+	Widest:	最大宽度：
+	Word captions	逐词字幕
+	Your model big, the gameplay in a smaller card above, one big word at a time.	模型放大显示，游戏画面放在上方较小的卡片中，一次显示一个大字。
+	{len}: fits {name} (up to {max}).	{len}：符合 {name} 的要求（最长 {max}）。
+	YouTube Shorts 1080×1920	YouTube Shorts 1080×1920
+	TikTok 1080×1920	TikTok 1080×1920
+	H.264 9:16 for TikTok, scaled to fill, VBR 1 pass, 8 Mbps	H.264 9:16（TikTok），缩放填充，VBR 1 遍，8 Mbps
+	H.264 9:16 for YouTube Shorts (up to 3 minutes), scaled to fill, VBR 1 pass, 16 Mbps	H.264 9:16（YouTube Shorts，最长 3 分钟），缩放填充，VBR 1 遍，16 Mbps

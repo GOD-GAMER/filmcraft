@@ -91,6 +91,12 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("view.clearGuides", "Clear Guides", ["View"], None),
     uic!("view.snapInProgramMonitor", "Snap in Program Monitor", ["View"], None),
     uic!("view.safeMargins", "Safe Margins", ["View", "Guide Templates"], None),
+    // Shorts ▸ Safe Zones: what YouTube Shorts or TikTok draws over a vertical video
+    uic!("view.safeZones.off", "Off", ["Shorts", "Safe Zones"], None),
+    uic!("view.safeZones.youtube", "YouTube Shorts", ["Shorts", "Safe Zones"], None),
+    uic!("view.safeZones.tiktok", "TikTok", ["Shorts", "Safe Zones"], None),
+    uic!("shorts.exportYouTube", "Export for YouTube Shorts…", ["Shorts"], None),
+    uic!("shorts.exportTikTok", "Export for TikTok…", ["Shorts"], None),
     uic!("view.guideTemplates.save", "Save Guides as Template…", ["View", "Guide Templates"], None),
     uic!("view.guideTemplates.manage", "Manage Guides…", ["View", "Guide Templates"], None),
     uic!("view.guideTemplates.apply", "Apply Guide Template", [], None),
@@ -592,6 +598,13 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
     if let Err(e) = &r {
         app.ui.status = e.clone();
     }
+    // a short made for a platform shows that platform's safe zones
+    if let Ok(v) = &r
+        && (id == "shorts.format" || id.starts_with("shorts.youtube.") || id.starts_with("shorts.tiktok."))
+        && let Some(pf) = v.get("platform").and_then(Value::as_str)
+    {
+        app.ui.program.safe_zone = pf.to_string();
+    }
     if r.is_ok() && matches!(id, "playhead.start" | "playhead.end") {
         crate::panels::timeline::reveal_playhead(app, ctx);
     }
@@ -677,7 +690,7 @@ pub struct MenuItem {
     pub checked: Option<bool>,
 }
 
-pub const MENUS: [&str; 9] = ["File", "Edit", "Clip", "Sequence", "Markers", "Graphics and Titles", "View", "Window", "Help"];
+pub const MENUS: [&str; 10] = ["File", "Edit", "Clip", "Sequence", "Shorts", "Markers", "Graphics and Titles", "View", "Window", "Help"];
 
 /// Labels only the native macOS app menu shows, with no command in the menu tree behind them: the
 /// Settings submenu and the predefined Hide, Hide Others and Quit items. They are translated through
@@ -788,6 +801,22 @@ pub fn menu_items_for(session: &filmcraft_engine::Session) -> Vec<MenuItem> {
             enabled: true,
             checked: None,
         });
+    }
+    // the Shorts menu's own items (Safe Zones, Export for…) go after Loop Ending, with the
+    // formats, not at the end of the menu
+    let ui_shorts: Vec<MenuItem> = out
+        .iter()
+        .filter(|it| {
+            (it.path.first().is_some_and(|m| m == "Shorts") && !it.id.starts_with("shorts."))
+                || matches!(it.id.as_str(), "shorts.exportYouTube" | "shorts.exportTikTok")
+        })
+        .cloned()
+        .collect();
+    if let Some(at) = out.iter().position(|it| it.id == "shorts.loopEnding") {
+        let ids: Vec<String> = ui_shorts.iter().map(|it| it.id.clone()).collect();
+        out.retain(|it| !ids.contains(&it.id));
+        let at = out.iter().position(|it| it.id == "shorts.loopEnding").map_or(at, |i| i + 1);
+        out.splice(at..at, ui_shorts);
     }
     out
 }

@@ -1,4 +1,4 @@
-//! Tests of Sequence ▸ Shorts (`shorts`): each command edits as one undo step, rejects hostile
+//! Tests of the Shorts menu (`shorts`): each command edits as one undo step, rejects hostile
 //! parameters, and the result renders.
 
 use std::sync::Arc;
@@ -79,7 +79,7 @@ fn every_command_is_in_sequence_shorts() {
         "shorts.captionsKaraoke",
         "shorts.captionsOneWord",
     ] {
-        assert_eq!(menu(id), ["Sequence", "Shorts"], "{id}");
+        assert_eq!(menu(id).first().copied(), Some("Shorts"), "{id}");
         assert!(Session::default().execute(id, json!({})).is_err(), "{id} needs a sequence");
     }
 }
@@ -277,6 +277,23 @@ fn stacked_layout_rejects_hostile_regions() {
         assert!(s.execute("shorts.stackLeft", p.clone()).is_err(), "{p}");
     }
     assert!(s.execute("shorts.stackLeft", json!({"split": 0.6, "model": [0.0, 0.5, 0.3, 1.0]})).is_ok());
+}
+
+#[test]
+fn seconds_is_how_long_an_effect_lasts_not_when_it_happens() {
+    // regression: the generic time parser read `seconds` (an effect's length) as the time to put
+    // it at, so a Hook Title of 2.5 s started 2.5 s in and a punch of 1 s landed at 1 s
+    let mut s = demo();
+    s.execute("shorts.verticalFill", json!({})).unwrap();
+    let (c, t) = v1_clip(&s);
+    s.set_playhead(t);
+    s.execute("shorts.punchIn", json!({"clips": [c.0], "seconds": 1.0})).unwrap();
+    let scale = clip(&s, c).effect("motion").unwrap().param("scale").unwrap().clone();
+    let first = scale.keyframes.first().unwrap().time;
+    assert_eq!(first, clip(&s, c).effect_time_at(seq(&s).settings.frame_rate.snap(s.playhead())), "at the playhead");
+    let r = s.execute("shorts.hookTitle", json!({"text": "hook", "seconds": 2.5})).unwrap();
+    let hook = &seq(&s).video_tracks[r["track"].as_u64().unwrap() as usize].items[0];
+    assert_eq!((hook.start, hook.duration), (Tick::ZERO, seq(&s).settings.frame_rate.snap_nearest(Tick::from_seconds_f64(2.5))));
 }
 
 #[test]

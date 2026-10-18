@@ -3694,3 +3694,64 @@
 	Layout…	レイアウト…
 	Word Captions…	単語キャプション…
 	Word Captions: Highlight Box	単語キャプション: ハイライトボックス
+	Formats…	フォーマット…
+	YouTube Shorts	YouTube ショート
+	TikTok	TikTok
+	Gameplay + Model	ゲーム画面 + モデル
+	Full Frame + Blur	全画面 + ぼかし
+	Meme Caption Bar	ミーム風テキストバー
+	Model Spotlight	モデル主役
+	Top Moments Countdown	ベスト場面カウントダウン
+	Auto-Trim to Length…	長さに合わせて自動トリミング…
+	Loop Ending	ループするエンディング
+	Reframe	リフレーム
+	Effects at Playhead	再生ヘッド位置のエフェクト
+	Automatic Effects	自動エフェクト
+	Caption Styles	キャプションのスタイル
+	Sound	サウンド
+	Safe Zones	セーフゾーン
+	Export for YouTube Shorts…	YouTube ショート用に書き出し…
+	Export for TikTok…	TikTok 用に書き出し…
+	Auto-Trim to Length	長さに合わせて自動トリミング
+	Bar text:	バーのテキスト:
+	Big black text on a white bar above the clip, like a meme.	クリップの上の白いバーに大きな黒い文字。ミーム風です。
+	Caption style:	キャプションのスタイル:
+	Export for {name}…	{name} 用に書き出し…
+	Following and For You	フォロー中とおすすめ
+	Format:	フォーマット:
+	Formats	フォーマット
+	Full frame	全画面
+	Gameplay on top, your model in its own box below, a hook title and captions.	上にゲーム画面、下に専用の枠でモデル。フックタイトルとキャプション付き。
+	Header:	見出し:
+	Hook title:	フックタイトル:
+	Keep	そのまま
+	Keeps the liveliest part of the sequence: its loud moments, with some build-up before them. Words are never cut in half.	シーケンスで最も盛り上がる部分を残します。大きな声の場面とその少し前の流れを含み、言葉の途中では切りません。
+	Length:	長さ:
+	Like, comment and share	高評価・コメント・共有
+	Loop ending (blends the end into the start)	ループするエンディング（最後を最初につなげます）
+	Moments:	場面の数:
+	Name, caption and sound	名前・説明文・サウンド
+	Over {limit}, {name} blocks shorts with a copyright claim: keep it under a minute if it uses copyrighted music.	{limit} を超えると、{name} は著作権の申し立てがあるショート動画をブロックします。著作権のある音楽を使う場合は 1 分未満にしてください。
+	Platform:	プラットフォーム:
+	Profile, like, comment and share	プロフィール・いいね・コメント・シェア
+	Progress bar	プログレスバー
+	Search and menu	検索とメニュー
+	Seconds each:	各場面の秒数:
+	Show the hook title	フックタイトルを表示
+	Show the model in its own box	モデルを専用の枠に表示
+	Size on screen:	画面上のサイズ:
+	The biggest moments of a longer clip as #3, #2, #1, the best one last.	長めのクリップの見どころを #3、#2、#1 の順に。一番の場面は最後です。
+	The whole clip in the middle over a blurred copy, a title above and captions below.	ぼかしたコピーの上にクリップ全体を中央に配置。上にタイトル、下にキャプション。
+	Title, channel and sound	タイトル・チャンネル・サウンド
+	Title:	タイトル:
+	Too long for {name}: it takes up to {max}; this is {len}.	{name} には長すぎます。上限は {max} で、この動画は {len} です。
+	Too short for {name}: it needs at least {min} seconds.	{name} には短すぎます。{min} 秒以上必要です。
+	Transcribe the clip first to add captions (Sequence ▸ Transcript ▸ Transcribe…).	キャプションを付けるには、先にクリップを書き起こしてください（シーケンス ▸ トランスクリプト ▸ 書き起こし…）。
+	Widest:	最大幅:
+	Word captions	単語キャプション
+	Your model big, the gameplay in a smaller card above, one big word at a time.	モデルを大きく、ゲーム画面は上の小さなカードに。大きな単語を 1 つずつ表示します。
+	{len}: fits {name} (up to {max}).	{len}: {name} に収まります（上限 {max}）。
+	YouTube Shorts 1080×1920	YouTube ショート 1080×1920
+	TikTok 1080×1920	TikTok 1080×1920
+	H.264 9:16 for TikTok, scaled to fill, VBR 1 pass, 8 Mbps	TikTok 向けの H.264 9:16、フレームを埋めるようにスケール、VBR 1 パス、8 Mbps
+	H.264 9:16 for YouTube Shorts (up to 3 minutes), scaled to fill, VBR 1 pass, 16 Mbps	YouTube ショート（最長 3 分）向けの H.264 9:16、フレームを埋めるようにスケール、VBR 1 パス、16 Mbps

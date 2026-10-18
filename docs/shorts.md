@@ -1,23 +1,93 @@
 # Shorts: vertical clips from streams
 
-**Sequence ▸ Shorts** collects the tools for cutting vertical short-form video (YouTube Shorts,
-TikTok, Instagram Reels), with clips cut from streams and VTuber VODs in mind. Every item is one
-undo step and is also a command that agents can run over MCP or the control channel
-(`shorts.*`, parameters below).
+The **Shorts** menu (in the menu bar, right after Sequence) collects the tools for cutting
+vertical short-form video (YouTube Shorts, TikTok, Instagram Reels), with clips cut from streams
+and VTuber VODs in mind. Every item is one undo step and is also a command that agents can run
+over MCP or the control channel (`shorts.*`, parameters below).
+
+The menu: **Formats…**, **YouTube Shorts ▸** and **TikTok ▸** (each format in one click),
+**Layout…**, **Word Captions…**, **Auto-Trim to Length…**, **Loop Ending**, **Safe Zones ▸**,
+**Export for YouTube Shorts…**, **Export for TikTok…**, then the single tools grouped in
+**Reframe**, **Effects at Playhead**, **Automatic Effects**, **Graphics**, **Caption Styles** and
+**Sound**.
 
 A typical clip:
 
 1. Cut the moment from the VOD on a normal 16:9 sequence.
 2. **Sequence ▸ Transcript ▸ Transcribe…** (once per clip; it finds every word and when it is
    said). Optionally remove filler words and pauses from the Transcript menu.
-3. **Sequence ▸ Shorts ▸ Vertical Short: …** makes a 1080 x 1920 copy of the sequence and opens
-   it. The 16:9 original is left as it was.
-4. **Layout…** for the gameplay and the model (drag their areas over a frame of the stream).
-5. **Zoom on Every Cut** for jump-cut pacing, then **Find Hype Moments** to punch in on the
-   loud reactions, or put the playhead on a moment and use the effects at the playhead.
-6. **Bleep Swear Words** if the clip needs it, and **Duck Music Under Speech** for a music bed.
-7. **Word Captions…**, a **Hook Title…** and a **Progress Bar** last, so they sit on top.
-8. Export with the **Social Vertical 1080×1920** preset.
+3. **Shorts ▸ Formats…**: pick the platform and a format; the Program monitor shows the short
+   (a 1080 x 1920 copy of the sequence; the 16:9 original is left as it was) with the platform's
+   safe zones over it.
+4. Fine-tune with **Layout…** and **Word Captions…**, add effects (**Find Hype Moments**,
+   **Zoom on Every Cut**, the effects at the playhead), **Bleep Swear Words** if the clip needs
+   it.
+5. **Export for YouTube Shorts…** or **Export for TikTok…**.
+
+## Formats
+
+**Formats…** opens a window: the platform (YouTube Shorts or TikTok), the format, and its
+options. Every change is previewed in the Program monitor (it is made again from the original
+sequence each time, as one undo step); OK keeps it, Cancel takes it back, **Export for …** keeps
+it and goes on to Export mode with the platform's preset. **Shorts ▸ YouTube Shorts ▸** and
+**Shorts ▸ TikTok ▸** apply a format straight away with the options last used.
+
+| Format | What it makes |
+|---|---|
+| Gameplay + Model | The stacked layout (all of the gameplay, the model in its own box below), a hook title over the gameplay for the first 2.5 s, word captions on the gameplay's bottom edge. |
+| Full Frame + Blur | The whole recording across the frame (nothing cut off) over a blurred copy, a title above it for the whole short, captions below it. |
+| Meme Caption Bar | A white bar of big black text right above the whole recording, on black (no captions unless turned on). |
+| Model Spotlight | The model large (half the frame tall), the gameplay in a smaller rounded card above it, one big word at a time where the two meet. |
+| Top Moments Countdown | The loudest moments of a longer clip (2–6, a few seconds each, mostly the build-up), one after the other from the smallest to the biggest, each numbered **#3**, **#2**, **#1** with a flash between them, under a header ("TOP 3 MOMENTS"). |
+
+Options: the text (hook title, title, bar text or header), whether the hook title shows, which
+side of the stream the model is on, word captions on or off and their style (Automatic keeps the
+style last used in Word Captions…; the spotlight's is One word), a progress bar (at the top: the
+apps draw their own over the bottom), the length (keep it, or trim to the best 15, 30 or 60
+seconds, see Auto-Trim), and a loop ending.
+
+Text always stays out of what the app draws over the video: the bar at the top, the name and
+description at the bottom, and the column of buttons on the right (captions next to the buttons
+are kept narrower). The gameplay and model areas picked in Layout… are kept. Applying a format to
+a vertical sequence again re-does it in place: what the last format added (its titles, captions,
+bars, progress bar, loop ending) is replaced.
+
+| Command | Parameters |
+|---|---|
+| `shorts.format`, `shorts.youtube.<format>`, `shorts.tiktok.<format>` (`gameplay`, `fullFrame`, `meme`, `spotlight`, `countdown`) | `{"platform": "youtube\|tiktok", "format": "…", "title": "…", "side": "right\|left", "hook": bool, "captions": bool, "captionStyle": "auto\|pop\|karaoke\|box\|oneWord\|plain", "progressBar": true, "seconds": 0 (or 3–600), "loop": false, "loopSeconds": 0.5, "moments": 3, "momentSeconds": 8, "background": "blur\|black"}` |
+
+The result lists the short's length, `warnings` about it (too long, or over a minute on YouTube
+Shorts) and the export preset to use.
+
+## Safe zones and exporting
+
+**Shorts ▸ Safe Zones ▸ YouTube Shorts / TikTok** draws over the Program monitor the parts of a
+vertical video the app covers: its bar at the top, the name, description and sound at the
+bottom, and the column of buttons on the right (drawn as plain circles). Applying a format turns
+on its platform's zones; **Off** hides them. The zones are approximate: the apps change them and
+phones differ, so keep faces and text near the middle.
+
+**Export for YouTube Shorts…** and **Export for TikTok…** open Export mode with the matching
+preset, and Export mode says whether the length suits the platform:
+
+| Preset | Settings | Length |
+|---|---|---|
+| YouTube Shorts 1080×1920 | H.264, 9:16, scaled to fill, VBR 1 pass, 16 Mbps, AAC 320 kbps | Up to 3 minutes. YouTube blocks Shorts **over 1 minute that have a copyright claim** (most music), so a clip with copyrighted music should stay under a minute. |
+| TikTok 1080×1920 | H.264, 9:16, scaled to fill, VBR 1 pass, 8 Mbps, AAC 320 kbps | At least 3 seconds, up to 10 minutes. 8 Mbps keeps a minute small enough to send to a phone. |
+
+## Auto-Trim to Length and Loop Ending
+
+**Auto-Trim to Length…** (`shorts.autoTrim`, `{"seconds": 30}`, 3–600) keeps the stretch of the
+sequence with the most going on: the loud moments Find Hype Moments looks for, weighted by how far
+they stand out, placed about 60 % of the way in so there is some build-up before them and the
+reaction after; with nothing loud, the busiest part. The edges move off words (nobody is cut off
+mid-word) and the result is never longer than asked, so a 60-second short stays under a minute.
+Everything in the sequence (every track, captions, markers) is cut the same way.
+
+**Loop Ending** (`shorts.loopEnding`, `{"seconds": 0.5}`) makes the short replay without a jump:
+on every picture track the last half second dissolves into the opening frame (held for one frame
+at the very end), and the sound fades out at the end and in over the first two frames. Applying a
+layout afterwards keeps the loop, made from the new layout.
 
 ## Vertical Short
 
@@ -40,15 +110,18 @@ and the whole session in the window is one undo step).
 - **Presets:** **Stack** (the default) keeps all of the gameplay beside the model at full width,
   with the model below in a box of its own shape (about a third of the frame tall); **Split**
   gives the gameplay the top 60 % and the model the bottom 40 % (full width); **Picture in
-  picture** makes the gameplay larger with the model in a bordered box over its lower corner.
-  **Model in the stream** says which side of the recording the model is on.
+  picture** makes the gameplay larger with the model in a bordered box over its lower corner;
+  **Spotlight** makes the model large with the gameplay in a smaller rounded card above it;
+  **Full frame** shows the whole recording across the frame with no model box. **Model in the
+  stream** says which side of the recording the model is on.
 - **Picker:** a frame of the recording with the **Gameplay** (green) and **Model** (pink) areas.
   Drag a box to move it, or its edges to resize it. Trim the gameplay box's bottom edge to hide
   captions or overlays the stream burned in.
 - **Gameplay:** *Width kept* (how much of the gameplay's width stays; less zooms in and makes the
-  pane taller), *Pan*, *Down* (its place on screen), *Corner roundness*.
-- **Model:** *Box width*, *Box height*, *Across*, *Down*, *Corner roundness*, *Border* and its
-  colour.
+  pane taller), *Size on screen* (the pane's width; narrower panes are centred), *Pan*, *Down*
+  (its place on screen), *Corner roundness*.
+- **Model:** *Show the model in its own box*, *Box width*, *Box height*, *Across*, *Down*,
+  *Corner roundness*, *Border* and its colour.
 - **Background:** a blurred, darkened copy of the recording behind both, or black.
 
 Applying a layout again replaces the previous one (its model and background copies). The model
@@ -59,7 +132,7 @@ below it. Both panes use **Rounded Crop**, so they can also be adjusted in Effec
 
 | Command | Parameters |
 |---|---|
-| `shorts.layout`, `shorts.stackRight`, `shorts.stackLeft` | `{"preset": "stack\|split\|pip", "side": "right\|left", "game": [x0, y0, x1, y1], "gameWidth": 0.3–1, "gamePan": −1–1, "gameY": 0–1, "model": [x0, y0, x1, y1], "modelWidth", "modelHeight", "modelX", "modelY" (fractions of the frame), "corner", "gameCorner", "border" (pixels at 1080 wide), "borderColor", "background": "blur\|black", "live": bool}` |
+| `shorts.layout`, `shorts.stackRight`, `shorts.stackLeft` | `{"preset": "stack\|split\|pip\|spotlight\|full", "side": "right\|left", "game": [x0, y0, x1, y1], "gameWidth": 0.3–1, "gameSize": 0.3–1, "gamePan": −1–1, "gameY": 0–1, "model": [x0, y0, x1, y1], "modelWidth", "modelHeight", "modelX", "modelY" (fractions of the frame), "corner", "gameCorner", "border" (pixels at 1080 wide), "borderColor", "showModel": bool, "background": "blur\|black", "live": bool}` |
 
 Regions are fractions of the recording (`[0.70, 0.36, 1, 1]` is the right 30 % from a little
 over a third of the way down, where many streams put the model, under a chat window).
@@ -86,6 +159,7 @@ nothing is selected.
 | Freeze Frame at Playhead | Inserts a held frame (later clips move right; the sound pauses), black and white and slowly pushing in, with a flash. A stacked layout's model pane holds too. | `shorts.freezeFrame` `{"seconds": 1.5, "zoom": 115, "flash": true}` |
 
 They also take `"time"` (ticks) instead of the playhead and `"clips"` instead of the selection.
+Their `"seconds"` is always how long the effect lasts, never when it happens.
 
 ## Automatic effects
 
@@ -103,7 +177,7 @@ They also take `"time"` (ticks) instead of the playhead and `"clips"` instead of
 
 | Menu item | What it does | Command and parameters |
 |---|---|---|
-| Hook Title… | Big text that slams in at the start, wobbles and fades (default "WAIT FOR IT…"), on its own track. Edit it afterwards like any graphic. | `shorts.hookTitle` `{"text": "…", "seconds": 2.5, "color": "#ffd60a"}` |
+| Hook Title… | Big text that slams in at the start, wobbles and fades (default "WAIT FOR IT…"), on its own track. Edit it afterwards like any graphic. | `shorts.hookTitle` `{"text": "…", "seconds": 2.5, "color": "#ffd60a", "y": 0.2, "width": 0.9}` (`y` and `width` are fractions of the frame) |
 | Chat Overlay… | Asks for the stream's chat replay and shows it in a box on its own **Chat** track: the newest messages, names in their chat colours. | `shorts.chatOverlay` `{"path": "…", "offset": 0, "lines": 6, "maxChars": 34, "position": "left"}` |
 | Progress Bar | A bar along the bottom (or top) that fills over the whole sequence, over a faint track. | `shorts.progressBar` `{"position": "bottom", "color": "#ffd60a", "height": 16}` |
 
@@ -133,8 +207,9 @@ Options:
   bigger the spoken word is, outline width and colour, shadow, a box behind the whole phrase
   (colour, opacity) and the boxes' roundness.
 - **Placement and motion:** across and down (by default just over the bottom edge of a layout's
-  gameplay pane, or 70 % down), how phrases appear (pop, bounce, fade, slide up, none) and how
-  long they stay after the speech.
+  gameplay pane, or 70 % down), the widest a phrase may be (wider ones shrink), how phrases appear
+  (pop, bounce, fade, slide up, none) and how long they stay after the speech (never past the
+  end of the sequence, so captions do not make it longer).
 
 A phrase ends when it is full, at a pause of half a second, at the end of a sentence and when
 the speaker changes. Phrases too wide for the frame shrink to fit. Bleeped words show masked
@@ -145,7 +220,7 @@ Command: `shorts.captions` (and `shorts.captionsPop`, `shorts.captionsKaraoke`,
 `shorts.captionsBox`, `shorts.captionsOneWord`) with `{"style", "maxWords", "maxChars", "lines",
 "font", "fontStyle", "size" (pixels at 1080 wide), "uppercase", "punctuation", "color",
 "highlight", "highlightText", "grow", "outline", "outlineColor", "shadow", "background",
-"backgroundColor", "backgroundOpacity", "radius", "x", "y", "animation", "hold",
+"backgroundColor", "backgroundOpacity", "radius", "x", "y", "width", "animation", "hold",
 "speakerColors", "fixes", "replace", "live"}`.
 
 ## Sound

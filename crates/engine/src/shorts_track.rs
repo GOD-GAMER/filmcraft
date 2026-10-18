@@ -1,4 +1,4 @@
-//! Sequence ▸ Shorts ▸ Track Model: keeps a cropped pane (a stacked layout's model pane) on the
+//! Shorts ▸ Track Model: keeps a cropped pane (a stacked layout's model pane) on the
 //! streamer as they move. The part of the picture the pane shows is tracked frame by frame in the
 //! background (Progress panel); when the job finishes, the pane's Motion ▸ Anchor Point and Crop
 //! get keyframes that follow it, smoothed, and never leave the picture. One undo step.

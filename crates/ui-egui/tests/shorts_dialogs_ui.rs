@@ -1,6 +1,6 @@
-//! Headless UI tests of Sequence ▸ Shorts ▸ Layout… and Word Captions…: the windows open from
-//! the menu, preview their command live (one undo step), Cancel undoes the preview, OK keeps it,
-//! and the Layout picker's boxes can be dragged.
+//! Headless UI tests of the Shorts menu: Formats…, Layout… and Word Captions… open from the
+//! menu, preview their command live (one undo step), Cancel undoes the preview, OK keeps it, and
+//! the Layout picker's boxes can be dragged; Safe Zones and Export for… work from the menu.
 
 use std::sync::mpsc::{Sender, channel};
 
@@ -20,6 +20,10 @@ impl Driver {
         let mut s = Session::default();
         s.execute("file.openDemoProject", json!({})).unwrap();
         s.execute("shorts.verticalFill", json!({})).unwrap();
+        Self::with(s)
+    }
+
+    fn with(s: Session) -> Self {
         let (tx, rx) = channel();
         let app = FilmcraftApp::new(s).with_control(rx);
         let harness = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_max_steps(10_000).build_eframe(move |_cc| app);
@@ -159,4 +163,88 @@ fn captions_window_needs_a_transcript_then_previews_each_style() {
     assert!(d.app().ui.shorts.captions.is_none());
     assert_eq!(d.undo_len(), undo + 1);
     assert_eq!(d.app().session.state.shorts_captions.clone().unwrap()["style"], "box");
+}
+
+#[test]
+fn shorts_is_a_menu_of_its_own_with_safe_zones_and_export() {
+    use filmcraft_ui_egui::menus::{MENUS, menu_items};
+    let mut d = Driver::new();
+    let pos = |m: &str| MENUS.iter().position(|x| *x == m).unwrap();
+    assert_eq!(pos("Shorts"), pos("Sequence") + 1, "next to Sequence in the menu bar");
+    let items = menu_items(d.app());
+    assert!(!items.iter().any(|i| i.path.first().map(String::as_str) == Some("Sequence") && i.id.starts_with("shorts.")), "nothing left under Sequence");
+    let ids: Vec<String> = items.iter().filter(|i| i.path.first().map(String::as_str) == Some("Shorts")).map(|i| i.id.clone()).collect();
+    assert_eq!(ids.first().map(String::as_str), Some("shorts.format"));
+    let at = |id: &str| ids.iter().position(|x| x == id).unwrap_or_else(|| panic!("{id} in {ids:?}"));
+    assert!(at("view.safeZones.tiktok") > at("shorts.loopEnding") && at("shorts.exportTikTok") < at("shorts.verticalFill"), "{ids:?}");
+    // Safe Zones: one at a time, drawn over the Program monitor
+    let checked = |d: &mut Driver, id: &str| menu_items(d.app()).into_iter().find(|i| i.id == id).and_then(|i| i.checked);
+    d.ok("ui.menu.invoke", json!({"id": "view.safeZones.tiktok"}));
+    assert_eq!(d.app().ui.program.safe_zone, "tiktok");
+    assert_eq!((checked(&mut d, "view.safeZones.tiktok"), checked(&mut d, "view.safeZones.youtube")), (Some(true), Some(false)));
+    d.frames(3);
+    d.ok("ui.menu.invoke", json!({"id": "view.safeZones.off"}));
+    assert!(d.app().ui.program.safe_zone.is_empty());
+    assert_eq!(checked(&mut d, "view.safeZones.off"), Some(true));
+    // Export for TikTok…: Export mode with its preset
+    d.ok("ui.menu.invoke", json!({"id": "shorts.exportTikTok"}));
+    assert_eq!(format!("{:?}", d.app().ui.mode), "Export");
+    assert_eq!(d.app().ui.export.preset, "TikTok 1080×1920");
+    d.frames(3);
+    let notes: Vec<String> = d.call("ui.elements", json!({})).to_string().matches("export.platformNote").map(str::to_string).collect();
+    assert!(!notes.is_empty(), "the length is checked against TikTok's");
+}
+
+#[test]
+fn formats_window_previews_each_choice_and_cancel_puts_the_stream_back() {
+    let mut s = Session::default();
+    s.execute("file.openDemoProject", json!({})).unwrap();
+    let mut d = Driver::with(s);
+    let stream = d.app().session.state.active_sequence;
+    let undo = d.undo_len();
+    d.ok("ui.menu.invoke", json!({"id": "shorts.format"}));
+    d.settle();
+    d.settle();
+    assert!(d.app().ui.shorts.format.is_some(), "the window is open");
+    let q = d.app().session.active_sequence().unwrap().clone();
+    assert_eq!((q.settings.width, q.settings.height), (1080, 1920), "a vertical short is previewed");
+    assert_ne!(d.app().session.state.active_sequence, stream);
+    assert_eq!(d.app().ui.program.safe_zone, "youtube", "with YouTube's safe zones");
+    assert_eq!(d.undo_len(), undo + 1, "one undo step");
+    // another platform and format: still one step, made again from the stream
+    d.click("shortsFormats.platform.tiktok");
+    d.click("shortsFormats.format.meme");
+    d.settle();
+    d.settle();
+    let r = d.app().ui.shorts.format.clone().unwrap().result;
+    assert_eq!((r["platform"].as_str(), r["format"].as_str()), (Some("tiktok"), Some("meme")), "{r}");
+    assert_eq!(d.app().ui.program.safe_zone, "tiktok");
+    assert!(d.tracks().contains(&"Meme Bar".to_string()));
+    assert_eq!(d.undo_len(), undo + 1);
+    let shorts = d.app().session.project.sequences().filter(|i| i.name.contains("TikTok") || i.name.contains("YouTube")).count();
+    assert_eq!(shorts, 1, "previews replace each other");
+    // Cancel: the stream again, nothing left behind
+    d.click("shortsFormats.cancel");
+    assert!(d.app().ui.shorts.format.is_none());
+    assert_eq!(d.app().session.state.active_sequence, stream);
+    assert_eq!(d.undo_len(), undo);
+    assert!(d.app().ui.program.safe_zone.is_empty());
+    // OK keeps it; Export for… goes on to Export mode with the preset
+    d.ok("ui.menu.invoke", json!({"id": "shorts.format"}));
+    d.settle();
+    d.settle();
+    d.click("shortsFormats.export");
+    assert!(d.app().ui.shorts.format.is_none());
+    assert_eq!(d.undo_len(), undo + 1);
+    assert_eq!(format!("{:?}", d.app().ui.mode), "Export");
+    assert_eq!(d.app().ui.export.preset, "TikTok 1080×1920", "the platform last used");
+}
+
+#[test]
+fn auto_trim_asks_for_the_length() {
+    let mut d = Driver::new();
+    d.ok("ui.menu.invoke", json!({"id": "shorts.autoTrim"}));
+    d.frames(3);
+    let els = d.call("ui.elements", json!({})).to_string();
+    assert!(els.contains("shortsTrim.seconds") && els.contains("shortsTrim.preset.15"), "the dialog is open");
 }

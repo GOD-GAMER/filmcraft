@@ -1,14 +1,17 @@
-//! Sequence ▸ Shorts: tools for vertical short-form video (YouTube Shorts, TikTok, Reels), built
+//! The Shorts menu: tools for vertical short-form video (YouTube Shorts, TikTok, Reels), built
 //! with clips cut from streams in mind.
 //!
+//! - **Formats** (Formats…, and YouTube Shorts ▸ / TikTok ▸ for each format straight away): a
+//!   whole short in one step, see [`crate::shorts_formats`].
 //! - **Vertical Short** (Crop to Fill, Follow Subject, Blurred Background): a 1080 x 1920 copy of
 //!   the active sequence with its footage reframed for the vertical frame. The original sequence
 //!   is left as it was.
-//! - **Stacked Layout** (model on the right or left): gameplay in the top pane and the streamer's
-//!   model or camera in the bottom pane, both cut from the same recording with Crop and Motion.
+//! - **Layout…** and the stacked layouts: gameplay and the streamer's model or camera cut from the
+//!   same recording, see [`crate::shorts_layout`].
+//! - **Auto-Trim to Length…** and **Loop Ending**, see [`crate::shorts_trim`].
 //! - **Punch In**, **Camera Shake** and **Impact Flash** at the playhead.
-//! - **Word Captions** (Pop, Karaoke, One Word): animated captions from the transcript, one
-//!   graphic clip per spoken word on a new track, the word being spoken highlighted.
+//! - **Word Captions** (Pop, Karaoke, One Word…): animated captions from the transcript, see
+//!   [`crate::shorts_captions`].
 //!
 //! Every command is one undo step and takes its options as parameters, so agents can drive it
 //! too. The geometry and word timing live in [`filmcraft_edit::shorts`].
@@ -27,76 +30,142 @@ use crate::{EngineError, Result, Session};
 
 type Run = fn(&mut Session, &Value) -> Result<Value>;
 
-const MENU: &[&str] = &["Sequence", "Shorts"];
+/// The Shorts menu (a menu of its own in the menu bar, after Sequence) and its submenus.
+const MENU: &[&str] = &["Shorts"];
+const YOUTUBE_MENU: &[&str] = &["Shorts", "YouTube Shorts"];
+const TIKTOK_MENU: &[&str] = &["Shorts", "TikTok"];
+const REFRAME: &[&str] = &["Shorts", "Reframe"];
+const AT_PLAYHEAD: &[&str] = &["Shorts", "Effects at Playhead"];
+const AUTOMATIC: &[&str] = &["Shorts", "Automatic Effects"];
+const GRAPHICS: &[&str] = &["Shorts", "Graphics"];
+const CAPTION_STYLES: &[&str] = &["Shorts", "Caption Styles"];
+const SOUND: &[&str] = &["Shorts", "Sound"];
 
 fn spec(id: &'static str, label: &'static str, params: &'static str, run: Run) -> CommandSpec {
-    CommandSpec { id, label, menu: MENU, shortcut: None, params, enabled: has_seq, run, journal: true }
+    spec_in(MENU, id, label, params, run)
+}
+
+fn spec_in(menu: &'static [&'static str], id: &'static str, label: &'static str, params: &'static str, run: Run) -> CommandSpec {
+    CommandSpec { id, label, menu, shortcut: None, params, enabled: has_seq, run, journal: true }
 }
 
 const VERTICAL: &str = r#"{"width":u32=1080,"height":u32=1920,"name":str?}"#;
-const LAYOUT: &str = r##"{"clips":[id]?,"preset":"stack|split|pip","side":"right|left","game":[x0,y0,x1,y1]?,"gameWidth":f?,"gamePan":f?,"gameY":f?,"model":[x0,y0,x1,y1]?,"modelWidth":f?,"modelHeight":f?,"modelX":f?,"modelY":f?,"corner":px?,"gameCorner":px?,"border":px?,"borderColor":"#ffffff"?,"background":"blur|black","split":f?,"live":bool?}"##;
-const CAPTIONS: &str = r##"{"style":"pop|karaoke|box|oneWord|plain"?,"maxWords":n=3,"maxChars":n?,"lines":n=1,"font":"Inter"?,"fontStyle":"Bold"?,"size":px?,"uppercase":bool=true,"punctuation":bool=true,"color":"#ffffff"?,"highlight":"#ffd60a"?,"highlightText":"#ffffff"?,"grow":percent?,"outline":percent?,"outlineColor":"#000000"?,"shadow":n?,"background":bool?,"backgroundColor":"#000000"?,"backgroundOpacity":n?,"radius":percent?,"x":f?,"y":f?,"animation":"pop|bounce|fade|slide|none"?,"hold":seconds=0.25,"speakerColors":bool=false,"fixes":"wrong=right, …"?,"replace":bool=true,"live":bool?}"##;
+const LAYOUT: &str = r##"{"clips":[id]?,"preset":"stack|split|pip|spotlight|full","side":"right|left","game":[x0,y0,x1,y1]?,"gameWidth":f?,"gameSize":f?,"gamePan":f?,"gameY":f?,"model":[x0,y0,x1,y1]?,"modelWidth":f?,"modelHeight":f?,"modelX":f?,"modelY":f?,"corner":px?,"gameCorner":px?,"border":px?,"borderColor":"#ffffff"?,"showModel":bool?,"background":"blur|black","split":f?,"live":bool?}"##;
+const FORMAT: &str = r#"{"platform":"youtube|tiktok","format":"gameplay|fullFrame|meme|spotlight|countdown","title":str?,"side":"right|left"?,"hook":bool?,"captions":bool?,"captionStyle":"auto|pop|karaoke|box|oneWord|plain"?,"progressBar":bool=true,"seconds":f=0,"loop":bool=false,"loopSeconds":f=0.5,"moments":n=3,"momentSeconds":f=8,"background":"blur|black"?}"#;
+const CAPTIONS: &str = r##"{"style":"pop|karaoke|box|oneWord|plain"?,"maxWords":n=3,"maxChars":n?,"lines":n=1,"font":"Inter"?,"fontStyle":"Bold"?,"size":px?,"uppercase":bool=true,"punctuation":bool=false,"color":"#ffffff"?,"highlight":"#ffd60a"?,"highlightText":"#ffffff"?,"grow":percent?,"outline":percent?,"outlineColor":"#000000"?,"shadow":n?,"background":bool?,"backgroundColor":"#000000"?,"backgroundOpacity":n?,"radius":percent?,"x":f?,"y":f?,"width":f?,"animation":"pop|bounce|fade|slide|none"?,"hold":seconds=0.25,"speakerColors":bool=false,"fixes":"wrong=right, …"?,"replace":bool=true,"live":bool?}"##;
 
 pub(crate) fn commands() -> Vec<CommandSpec> {
     use crate::shorts_captions as cap;
+    use crate::shorts_formats::{self as fm, Format};
     use crate::shorts_fx as fx;
     use crate::shorts_layout as ly;
     const WORDS: &str = r#"{"words":"bonk, what"|[str],"effect":"punch|shake|glitch|flash"|[..]}"#;
+    macro_rules! format_spec {
+        ($menu:expr, $id:literal, $label:literal, $pf:expr, $f:expr) => {
+            spec_in($menu, $id, $label, FORMAT, |s, p| fm::format(s, p, Some(($pf, $f)), $id))
+        };
+    }
     vec![
-        spec("shorts.verticalFill", "Vertical Short: Crop to Fill", VERTICAL, |s, p| vertical(s, p, Reframe::Fill, "shorts.verticalFill")),
-        spec("shorts.verticalFollow", "Vertical Short: Follow Subject", VERTICAL, |s, p| vertical(s, p, Reframe::Follow, "shorts.verticalFollow")),
-        spec("shorts.verticalBlur", "Vertical Short: Blurred Background", VERTICAL, |s, p| vertical(s, p, Reframe::Blur, "shorts.verticalBlur")),
+        spec("shorts.format", "Formats…", FORMAT, |s, p| fm::format(s, p, None, "shorts.format")),
+        format_spec!(YOUTUBE_MENU, "shorts.youtube.gameplay", "Gameplay + Model", fm::YOUTUBE, Format::Gameplay),
+        format_spec!(YOUTUBE_MENU, "shorts.youtube.fullFrame", "Full Frame + Blur", fm::YOUTUBE, Format::FullFrame),
+        format_spec!(YOUTUBE_MENU, "shorts.youtube.meme", "Meme Caption Bar", fm::YOUTUBE, Format::Meme),
+        format_spec!(YOUTUBE_MENU, "shorts.youtube.spotlight", "Model Spotlight", fm::YOUTUBE, Format::Spotlight),
+        format_spec!(YOUTUBE_MENU, "shorts.youtube.countdown", "Top Moments Countdown", fm::YOUTUBE, Format::Countdown),
+        format_spec!(TIKTOK_MENU, "shorts.tiktok.gameplay", "Gameplay + Model", fm::TIKTOK, Format::Gameplay),
+        format_spec!(TIKTOK_MENU, "shorts.tiktok.fullFrame", "Full Frame + Blur", fm::TIKTOK, Format::FullFrame),
+        format_spec!(TIKTOK_MENU, "shorts.tiktok.meme", "Meme Caption Bar", fm::TIKTOK, Format::Meme),
+        format_spec!(TIKTOK_MENU, "shorts.tiktok.spotlight", "Model Spotlight", fm::TIKTOK, Format::Spotlight),
+        format_spec!(TIKTOK_MENU, "shorts.tiktok.countdown", "Top Moments Countdown", fm::TIKTOK, Format::Countdown),
         spec("shorts.layout", "Layout…", LAYOUT, |s, p| ly::layout(s, p, (ly::Preset::Stack, ly::Side::Right), "shorts.layout")),
-        spec("shorts.stackRight", "Stacked Layout: Model on Right", LAYOUT, |s, p| ly::layout(s, p, (ly::Preset::Split, ly::Side::Right), "shorts.stackRight")),
-        spec("shorts.stackLeft", "Stacked Layout: Model on Left", LAYOUT, |s, p| ly::layout(s, p, (ly::Preset::Split, ly::Side::Left), "shorts.stackLeft")),
-        spec("shorts.trackModel", "Track Model", r#"{"clips":[id]?,"wait":bool=false}"#, crate::shorts_track::track_model),
-        spec("shorts.punchIn", "Punch In at Playhead", r#"{"clips":[id]?,"time":ticks?,"zoom":percent=125,"seconds":f=1}"#, punch_in),
-        spec("shorts.shake", "Camera Shake at Playhead", r#"{"clips":[id]?,"time":ticks?,"amount":px=40,"seconds":f=0.5}"#, shake),
-        spec("shorts.glitch", "Glitch Hit at Playhead", r#"{"clips":[id]?,"time":ticks?,"amount":px=40,"seconds":f=0.35}"#, glitch),
-        spec("shorts.flash", "Impact Flash at Playhead", r##"{"time":ticks?,"seconds":f=0.3,"color":"#ffffff"?}"##, flash),
-        spec("shorts.speedRamp", "Speed Ramp at Playhead", r#"{"time":ticks?,"speed":percent=35,"seconds":f=1,"ramp":seconds=0.2}"#, fx::speed_ramp),
-        spec("shorts.freezeFrame", "Freeze Frame at Playhead", r#"{"time":ticks?,"seconds":f=1.5,"zoom":percent=115,"flash":bool=true}"#, fx::freeze_frame),
-        spec(
+        spec("shorts.captions", "Word Captions…", CAPTIONS, |s, p| cap::captions(s, p, cap::Style::Pop, "shorts.captions")),
+        spec("shorts.autoTrim", "Auto-Trim to Length…", r#"{"seconds":f=30}"#, crate::shorts_trim::auto_trim),
+        spec("shorts.loopEnding", "Loop Ending", r#"{"seconds":f=0.5}"#, crate::shorts_trim::loop_ending),
+        spec_in(REFRAME, "shorts.verticalFill", "Vertical Short: Crop to Fill", VERTICAL, |s, p| vertical(s, p, Reframe::Fill, "shorts.verticalFill")),
+        spec_in(REFRAME, "shorts.verticalFollow", "Vertical Short: Follow Subject", VERTICAL, |s, p| vertical(s, p, Reframe::Follow, "shorts.verticalFollow")),
+        spec_in(REFRAME, "shorts.verticalBlur", "Vertical Short: Blurred Background", VERTICAL, |s, p| vertical(s, p, Reframe::Blur, "shorts.verticalBlur")),
+        spec_in(REFRAME, "shorts.stackRight", "Stacked Layout: Model on Right", LAYOUT, |s, p| {
+            ly::layout(s, p, (ly::Preset::Split, ly::Side::Right), "shorts.stackRight")
+        }),
+        spec_in(REFRAME, "shorts.stackLeft", "Stacked Layout: Model on Left", LAYOUT, |s, p| {
+            ly::layout(s, p, (ly::Preset::Split, ly::Side::Left), "shorts.stackLeft")
+        }),
+        spec_in(REFRAME, "shorts.trackModel", "Track Model", r#"{"clips":[id]?,"wait":bool=false}"#, crate::shorts_track::track_model),
+        spec_in(AT_PLAYHEAD, "shorts.punchIn", "Punch In at Playhead", r#"{"clips":[id]?,"time":ticks?,"zoom":percent=125,"seconds":f=1}"#, punch_in),
+        spec_in(AT_PLAYHEAD, "shorts.shake", "Camera Shake at Playhead", r#"{"clips":[id]?,"time":ticks?,"amount":px=40,"seconds":f=0.5}"#, shake),
+        spec_in(AT_PLAYHEAD, "shorts.glitch", "Glitch Hit at Playhead", r#"{"clips":[id]?,"time":ticks?,"amount":px=40,"seconds":f=0.35}"#, glitch),
+        spec_in(AT_PLAYHEAD, "shorts.flash", "Impact Flash at Playhead", r##"{"time":ticks?,"seconds":f=0.3,"color":"#ffffff"?}"##, flash),
+        spec_in(
+            AT_PLAYHEAD,
+            "shorts.speedRamp",
+            "Speed Ramp at Playhead",
+            r#"{"time":ticks?,"speed":percent=35,"seconds":f=1,"ramp":seconds=0.2}"#,
+            fx::speed_ramp,
+        ),
+        spec_in(
+            AT_PLAYHEAD,
+            "shorts.freezeFrame",
+            "Freeze Frame at Playhead",
+            r#"{"time":ticks?,"seconds":f=1.5,"zoom":percent=115,"flash":bool=true}"#,
+            fx::freeze_frame,
+        ),
+        spec_in(
+            AUTOMATIC,
             "shorts.hype",
             "Find Hype Moments",
             r#"{"effects":["punch","shake","glitch","flash"]=["punch","shake"],"sensitivity":dB=9,"maxMoments":n=8,"minGap":seconds=2,"markersOnly":bool=false}"#,
             fx::hype,
         ),
-        spec(
+        spec_in(
+            AUTOMATIC,
             "shorts.chatHighlights",
             "Find Chat Highlights…",
             r#"{"path":str,"clip":id?,"offset":seconds=0,"window":seconds=5,"maxMoments":n=10}"#,
             crate::chat::highlights,
         ),
-        spec("shorts.zoomCuts", "Zoom on Every Cut", r#"{"zoom":percent=112}"#, fx::zoom_cuts),
-        spec(
+        spec_in(AUTOMATIC, "shorts.zoomCuts", "Zoom on Every Cut", r#"{"zoom":percent=112}"#, fx::zoom_cuts),
+        spec_in(
+            AUTOMATIC,
             "shorts.beatSync",
             "Effects on the Beat",
             r#"{"clips":[id]?,"effects":["pulse","flash","shake","punch","glitch"]=["pulse"],"every":n=2,"amount":percent=105}"#,
             fx::beat_sync,
         ),
-        spec("shorts.keywordEffects", "Effects on Words…", WORDS, fx::keyword_effects),
-        spec("shorts.hookTitle", "Hook Title…", r##"{"text":str="WAIT FOR IT…","seconds":f=2.5,"color":"#ffd60a"?,"time":ticks?}"##, fx::hook_title),
-        spec(
+        spec_in(AUTOMATIC, "shorts.keywordEffects", "Effects on Words…", WORDS, fx::keyword_effects),
+        spec_in(
+            GRAPHICS,
+            "shorts.hookTitle",
+            "Hook Title…",
+            r##"{"text":str="WAIT FOR IT…","seconds":f=2.5,"color":"#ffd60a"?,"time":ticks?,"y":f?,"width":f=0.9}"##,
+            fx::hook_title,
+        ),
+        spec_in(
+            GRAPHICS,
             "shorts.chatOverlay",
             "Chat Overlay…",
             r#"{"path":str,"clip":id?,"offset":seconds=0,"lines":n=6,"maxChars":n=34,"position":"left|right"}"#,
             crate::chat::overlay,
         ),
-        spec("shorts.progressBar", "Progress Bar", r##"{"color":"#ffd60a"?,"position":"bottom|top","height":px?}"##, fx::progress_bar),
-        spec("shorts.captions", "Word Captions…", CAPTIONS, |s, p| cap::captions(s, p, cap::Style::Pop, "shorts.captions")),
-        spec("shorts.captionsPop", "Word Captions: Pop", CAPTIONS, |s, p| cap::captions(s, p, cap::Style::Pop, "shorts.captionsPop")),
-        spec("shorts.captionsKaraoke", "Word Captions: Karaoke", CAPTIONS, |s, p| cap::captions(s, p, cap::Style::Karaoke, "shorts.captionsKaraoke")),
-        spec("shorts.captionsBox", "Word Captions: Highlight Box", CAPTIONS, |s, p| cap::captions(s, p, cap::Style::Box, "shorts.captionsBox")),
-        spec("shorts.captionsOneWord", "Word Captions: One Word", CAPTIONS, |s, p| cap::captions(s, p, cap::Style::OneWord, "shorts.captionsOneWord")),
-        spec(
+        spec_in(GRAPHICS, "shorts.progressBar", "Progress Bar", r##"{"color":"#ffd60a"?,"position":"bottom|top","height":px?}"##, fx::progress_bar),
+        spec_in(CAPTION_STYLES, "shorts.captionsPop", "Word Captions: Pop", CAPTIONS, |s, p| cap::captions(s, p, cap::Style::Pop, "shorts.captionsPop")),
+        spec_in(CAPTION_STYLES, "shorts.captionsKaraoke", "Word Captions: Karaoke", CAPTIONS, |s, p| {
+            cap::captions(s, p, cap::Style::Karaoke, "shorts.captionsKaraoke")
+        }),
+        spec_in(CAPTION_STYLES, "shorts.captionsBox", "Word Captions: Highlight Box", CAPTIONS, |s, p| {
+            cap::captions(s, p, cap::Style::Box, "shorts.captionsBox")
+        }),
+        spec_in(CAPTION_STYLES, "shorts.captionsOneWord", "Word Captions: One Word", CAPTIONS, |s, p| {
+            cap::captions(s, p, cap::Style::OneWord, "shorts.captionsOneWord")
+        }),
+        spec_in(
+            SOUND,
             "shorts.bleep",
             "Bleep Swear Words",
             r#"{"words":[str]|str?,"extraWords":[str]|str?,"hz":f=1000,"beepDb":f=-14,"padding":seconds=0.06}"#,
             fx::bleep,
         ),
-        spec("shorts.duckMusic", "Duck Music Under Speech", r#"{"clips":[id]?,"reduceDb":f=-15}"#, fx::duck_music),
-        spec("shorts.soundEffect", "Sound Effect at Playhead", r#"{"item":itemId?,"time":ticks?}"#, fx::sound_effect),
+        spec_in(SOUND, "shorts.duckMusic", "Duck Music Under Speech", r#"{"clips":[id]?,"reduceDb":f=-15}"#, fx::duck_music),
+        spec_in(SOUND, "shorts.soundEffect", "Sound Effect at Playhead", r#"{"item":itemId?,"time":ticks?}"#, fx::sound_effect),
     ]
 }
 
@@ -128,9 +197,13 @@ pub(crate) fn base_track(pr: &Project, q: &Sequence) -> Option<usize> {
         .or_else(|| q.video_tracks.iter().position(|t| t.items.iter().any(|i| is_footage(pr, i))))
 }
 
-/// A copy a layout made (its model pane or blurred background), not the main picture.
+/// A copy a layout made (its model pane or blurred background) or a Loop Ending's held frame, not
+/// the main picture.
 pub(crate) fn is_copy(it: &TrackItem) -> bool {
-    it.name.ends_with(crate::shorts_layout::MODEL_SUFFIX) || it.name.ends_with(crate::shorts_layout::BACKGROUND_SUFFIX) || it.name.ends_with(" (Blurred)")
+    it.name.ends_with(crate::shorts_layout::MODEL_SUFFIX)
+        || it.name.ends_with(crate::shorts_layout::BACKGROUND_SUFFIX)
+        || it.name.ends_with(" (Blurred)")
+        || crate::shorts_trim::is_loop_hold(it)
 }
 
 /// A blurred background copy (effects at a moment leave it alone).
@@ -561,9 +634,20 @@ fn glitch_clip(it: &mut TrackItem, t: Tick, dur: Tick, amount: f64, frame: Tick)
     shake_clip(it, t, dur, amount * 0.6, frame);
 }
 
+/// The moment a Shorts command acts at: `time` (or `frame` or `timecode`). Their `seconds` is
+/// how long the effect lasts, never when it happens (the generic time parser would read it as
+/// a time).
+pub(crate) fn at_time(s: &Session, p: &Value) -> Option<Tick> {
+    let mut q = p.clone();
+    if let Some(m) = q.as_object_mut() {
+        m.remove("seconds");
+    }
+    time_p(s, &q, "")
+}
+
 /// Shared by the single-moment commands: the moment (time param or playhead) and its clips.
 fn moment(s: &Session, p: &Value, cmd: &str) -> Result<(Tick, Vec<ClipId>)> {
-    let t = time_p(s, p, "").unwrap_or_else(|| s.playhead());
+    let t = at_time(s, p).unwrap_or_else(|| s.playhead());
     let clips = clips_at(s, p, t);
     if clips.is_empty() {
         return Err(bad(cmd, "move the playhead over a video clip"));

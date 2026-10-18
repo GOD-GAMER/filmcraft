@@ -73,6 +73,7 @@ fn meta(command: &str) -> Option<(&'static str, &'static str, &'static str)> {
         "project.matteColor" => (tl!("Color Matte Color"), "matteColor", tl!("OK")),
         "shorts.keywordEffects" => (tl!("Effects on Words"), "shortsWords", tl!("OK")),
         "shorts.hookTitle" => (tl!("Hook Title"), "shortsHook", tl!("OK")),
+        "shorts.autoTrim" => (tl!("Auto-Trim to Length"), "shortsTrim", tl!("Trim")),
         _ => return None,
     })
 }
@@ -98,6 +99,7 @@ fn dialog_command(id: &str) -> Option<&'static str> {
         "project.matteColor" => "project.matteColor",
         "shorts.keywordEffects" => "shorts.keywordEffects",
         "shorts.hookTitle" => "shorts.hookTitle",
+        "shorts.autoTrim" => "shorts.autoTrim",
         _ => return None,
     })
 }
@@ -351,6 +353,7 @@ fn defaults(app: &mut FilmcraftApp, cmd: &str, id: &str) -> Result<(Value, Value
         "markers.addFlashCue" => (json!({"name": "", "comment": ""}), Value::Null),
         "shorts.keywordEffects" => (json!({"words": "", "effect": "punch"}), Value::Null),
         "shorts.hookTitle" => (json!({"text": "WAIT FOR IT…", "seconds": 2.5}), Value::Null),
+        "shorts.autoTrim" => (json!({"seconds": 30.0}), Value::Null),
         "file.newColorMatte" => {
             let st = s.active_sequence().map(|q| q.settings.clone()).unwrap_or_default();
             (json!({"color": "#000000", "name": "Color Matte", "width": st.width, "height": st.height, "seconds": 5.0}), Value::Null)
@@ -790,6 +793,19 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
             "shorts.hookTitle" => {
                 text(ui, &mut elems, pre, p, "text", tl!("Text:"), 260.0);
                 number(ui, &mut elems, pre, p, "seconds", tl!("Duration:"), 0.5..=30.0, " s");
+            }
+            "shorts.autoTrim" => {
+                ui.label(tl!("Keeps the liveliest part of the sequence: its loud moments, with some build-up before them. Words are never cut in half."));
+                ui.horizontal(|ui| {
+                    for secs in [15.0, 30.0, 60.0] {
+                        let r = ui.selectable_label((p["seconds"].as_f64().unwrap_or(0.0) - secs).abs() < 0.01, format!("{secs:.0} s"));
+                        elems.push((format!("{pre}.preset.{secs:.0}"), r.rect, format!("{secs:.0} s")));
+                        if r.clicked() {
+                            p["seconds"] = json!(secs);
+                        }
+                    }
+                });
+                number(ui, &mut elems, pre, p, "seconds", tl!("Length:"), 3.0..=600.0, " s");
             }
             "help.systemCompatibilityReport" => {
                 let r = &d.info;

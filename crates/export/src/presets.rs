@@ -97,6 +97,10 @@ pub fn builtin_presets() -> Vec<ExportPreset> {
     let web = "Web & Social";
     let bc = "Broadcast";
     let vertical = ExportSettings { scaling: Scaling::ScaleToFill, ..h264(Some((1080, 1920)), 12_000, 16_000) };
+    // YouTube re-encodes everything it receives, so its preset gives it more to work from; TikTok's
+    // stays small enough to send to a phone and upload from there
+    let shorts = ExportSettings { scaling: Scaling::ScaleToFill, ..h264(Some((1080, 1920)), 16_000, 20_000) };
+    let tiktok = ExportSettings { scaling: Scaling::ScaleToFill, ..h264(Some((1080, 1920)), 8_000, 10_000) };
     vec![
         p(DEFAULT_PRESET, ms, "H.264 at the sequence's frame size and rate; bitrate adapts to the frame size (0.2 bits per pixel)", adaptive(0.2)),
         p("Match Source – Adaptive Medium Bitrate", ms, "H.264 at the sequence's frame size and rate; 0.1 bits per pixel", adaptive(0.1)),
@@ -118,6 +122,8 @@ pub fn builtin_presets() -> Vec<ExportPreset> {
             ExportSettings { bitrate_mode: BitrateMode::Vbr2Pass, ..h264(Some((3840, 2160)), 50_000, 65_000) },
         ),
         p("Social Vertical 1080×1920", web, "H.264 9:16 portrait for short-form social video, scaled to fill, 12 Mbps", vertical),
+        p("YouTube Shorts 1080×1920", web, "H.264 9:16 for YouTube Shorts (up to 3 minutes), scaled to fill, VBR 1 pass, 16 Mbps", shorts),
+        p("TikTok 1080×1920", web, "H.264 9:16 for TikTok, scaled to fill, VBR 1 pass, 8 Mbps", tiktok),
         p("Apple ProRes 422 HQ", bc, "QuickTime, ProRes 422 HQ, 24-bit 48 kHz PCM", mov(Format::ProRes, "hq")),
         p("Apple ProRes 422", bc, "QuickTime, ProRes 422, 24-bit 48 kHz PCM", mov(Format::ProRes, "standard")),
         p("Apple ProRes 422 LT", bc, "QuickTime, ProRes 422 LT, 24-bit 48 kHz PCM", mov(Format::ProRes, "lt")),

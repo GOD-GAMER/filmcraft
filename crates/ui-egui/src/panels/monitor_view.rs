@@ -127,6 +127,14 @@ pub fn route(app: &mut FilmcraftApp, id: &str, params: &Value) -> Option<Result<
     if let Some(d) = rest.strip_prefix("display.") {
         return Some(set_display(app, w, d));
     }
+    if let Some(z) = rest.strip_prefix("safeZones.") {
+        let zone = match z {
+            "off" => String::new(),
+            other => filmcraft_engine::shorts_formats::platform(other)?.id.to_string(),
+        };
+        app.ui.program.safe_zone = zone.clone();
+        return Some(Ok(json!({"monitor": "program", "safeZone": zone})));
+    }
     if let Some(z) = rest.strip_prefix("magnification.") {
         let zoom = if z == "fit" { None } else { Some(ZOOMS.iter().find(|(n, _)| *n == z)?.1) };
         let v = view_mut(app, w);
@@ -297,6 +305,10 @@ pub fn checked(app: &FilmcraftApp, id: &str) -> Option<bool> {
             _ => v,
         };
         return Some(v.display_mode() == Some(*mode));
+    }
+    if let Some(z) = rest.strip_prefix("safeZones.") {
+        let cur = &app.ui.program.safe_zone;
+        return Some(if z == "off" { cur.is_empty() } else { cur == z });
     }
     if let Some(z) = rest.strip_prefix("magnification.") {
         return Some(if z == "fit" { v.zoom.is_none() } else { ZOOMS.iter().find(|(n, _)| *n == z).is_some_and(|(_, f)| v.zoom == Some(*f)) });

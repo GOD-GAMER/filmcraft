@@ -263,6 +263,10 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, which: Which)
             ui.painter().line_segment([c - vec2(8.0, 0.0), c + vec2(8.0, 0.0)], Stroke::new(1.0, Color32::from_white_alpha(120)));
             ui.painter().line_segment([c - vec2(0.0, 8.0), c + vec2(0.0, 8.0)], Stroke::new(1.0, Color32::from_white_alpha(120)));
         }
+        // Shorts ▸ Safe Zones: what the app draws over a vertical short
+        if which == Which::Program && !mv.safe_zone.is_empty() && pic.height() > pic.width() {
+            crate::panels::shorts_dialogs::paint_safe_zones(ui.painter(), pic, &mv.safe_zone);
+        }
         if display != DisplayMode::Composite && !compare {
             let label = match display {
                 DisplayMode::Composite => tl!("Composite"),

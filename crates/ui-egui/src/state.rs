@@ -316,6 +316,9 @@ pub struct MonitorView {
     /// length (start, end), set with the zoom bar under the ruler; None = all of it.
     pub time_zoom: Option<[f64; 2]>,
     pub safe_margins: bool,
+    /// Shorts ▸ Safe Zones: the platform (`youtube`, `tiktok`) whose buttons and text are drawn
+    /// over the picture; empty for none.
+    pub safe_zone: String,
     pub show_transport: bool,
     /// Transport buttons hidden through the monitor's Button Editor. Stored per monitor.
     pub transport_hidden: Vec<String>,
@@ -342,6 +345,7 @@ impl Default for MonitorView {
             pan: [0.0, 0.0],
             time_zoom: None,
             safe_margins: false,
+            safe_zone: String::new(),
             show_transport: true,
             // The optional Loop button is available from the editor without altering default layouts.
             transport_hidden: vec!["playback.loop".into()],
@@ -587,7 +591,7 @@ pub struct UiState {
     /// `panels::menu_dialogs`.
     #[serde(default)]
     pub extras: crate::panels::menu_dialogs::Extras,
-    /// Sequence ▸ Shorts ▸ Layout… and Word Captions… windows. See `panels::shorts_dialogs`.
+    /// Shorts ▸ Layout… and Word Captions… windows. See `panels::shorts_dialogs`.
     #[serde(default)]
     pub shorts: crate::panels::shorts_dialogs::ShortsUi,
     /// Essential Graphics ▸ Browse and the graphics template / Replace Fonts dialogs. See

@@ -3695,3 +3695,64 @@
 	Layout…	Diseño…
 	Word Captions…	Subtítulos por palabra…
 	Word Captions: Highlight Box	Subtítulos por palabra: recuadro resaltado
+	Formats…	Formatos…
+	YouTube Shorts	YouTube Shorts
+	TikTok	TikTok
+	Gameplay + Model	Juego + modelo
+	Full Frame + Blur	Cuadro completo + desenfoque
+	Meme Caption Bar	Barra de texto de meme
+	Model Spotlight	Modelo destacado
+	Top Moments Countdown	Cuenta atrás de mejores momentos
+	Auto-Trim to Length…	Recortar automáticamente a una duración…
+	Loop Ending	Final en bucle
+	Reframe	Reencuadrar
+	Effects at Playhead	Efectos en el cabezal
+	Automatic Effects	Efectos automáticos
+	Caption Styles	Estilos de subtítulos
+	Sound	Sonido
+	Safe Zones	Zonas seguras
+	Export for YouTube Shorts…	Exportar para YouTube Shorts…
+	Export for TikTok…	Exportar para TikTok…
+	Auto-Trim to Length	Recortar automáticamente a una duración
+	Bar text:	Texto de la barra:
+	Big black text on a white bar above the clip, like a meme.	Texto negro grande en una barra blanca sobre el clip, como un meme.
+	Caption style:	Estilo de subtítulos:
+	Export for {name}…	Exportar para {name}…
+	Following and For You	Siguiendo y Para ti
+	Format:	Formato:
+	Formats	Formatos
+	Full frame	Cuadro completo
+	Gameplay on top, your model in its own box below, a hook title and captions.	El juego arriba, tu modelo en su propio recuadro debajo, un título gancho y subtítulos.
+	Header:	Encabezado:
+	Hook title:	Título gancho:
+	Keep	Mantener
+	Keeps the liveliest part of the sequence: its loud moments, with some build-up before them. Words are never cut in half.	Conserva la parte más animada de la secuencia: sus momentos fuertes, con algo de preparación antes. Nunca corta una palabra por la mitad.
+	Length:	Duración:
+	Like, comment and share	Me gusta, comentar y compartir
+	Loop ending (blends the end into the start)	Final en bucle (funde el final con el inicio)
+	Moments:	Momentos:
+	Name, caption and sound	Nombre, descripción y sonido
+	Over {limit}, {name} blocks shorts with a copyright claim: keep it under a minute if it uses copyrighted music.	Por encima de {limit}, {name} bloquea los vídeos cortos con reclamaciones de derechos de autor: mantenlo por debajo de un minuto si usa música con derechos.
+	Platform:	Plataforma:
+	Profile, like, comment and share	Perfil, me gusta, comentar y compartir
+	Progress bar	Barra de progreso
+	Search and menu	Búsqueda y menú
+	Seconds each:	Segundos cada uno:
+	Show the hook title	Mostrar el título gancho
+	Show the model in its own box	Mostrar el modelo en su propio recuadro
+	Size on screen:	Tamaño en pantalla:
+	The biggest moments of a longer clip as #3, #2, #1, the best one last.	Los mejores momentos de un clip más largo como #3, #2, #1, el mejor al final.
+	The whole clip in the middle over a blurred copy, a title above and captions below.	El clip entero en el centro sobre una copia desenfocada, un título arriba y subtítulos abajo.
+	Title, channel and sound	Título, canal y sonido
+	Title:	Título:
+	Too long for {name}: it takes up to {max}; this is {len}.	Demasiado largo para {name}: admite hasta {max}; este dura {len}.
+	Too short for {name}: it needs at least {min} seconds.	Demasiado corto para {name}: necesita al menos {min} segundos.
+	Transcribe the clip first to add captions (Sequence ▸ Transcript ▸ Transcribe…).	Transcribe primero el clip para añadir subtítulos (Secuencia ▸ Transcripción ▸ Transcribir…).
+	Widest:	Ancho máximo:
+	Word captions	Subtítulos por palabra
+	Your model big, the gameplay in a smaller card above, one big word at a time.	Tu modelo en grande, el juego en una tarjeta más pequeña arriba, una palabra grande cada vez.
+	{len}: fits {name} (up to {max}).	{len}: cabe en {name} (hasta {max}).
+	YouTube Shorts 1080×1920	YouTube Shorts 1080×1920
+	TikTok 1080×1920	TikTok 1080×1920
+	H.264 9:16 for TikTok, scaled to fill, VBR 1 pass, 8 Mbps	H.264 9:16 para TikTok, escalado para rellenar, VBR 1 pasada, 8 Mbps
+	H.264 9:16 for YouTube Shorts (up to 3 minutes), scaled to fill, VBR 1 pass, 16 Mbps	H.264 9:16 para YouTube Shorts (hasta 3 minutos), escalado para rellenar, VBR 1 pasada, 16 Mbps

@@ -53,9 +53,11 @@ pub mod shortcut_presets;
 pub mod shortcuts;
 pub mod shorts;
 pub mod shorts_captions;
+pub mod shorts_formats;
 pub mod shorts_fx;
 pub mod shorts_layout;
 pub mod shorts_track;
+pub(crate) mod shorts_trim;
 pub mod source_monitor;
 pub mod sync;
 pub mod transcript;
@@ -364,12 +366,15 @@ pub struct EditorState {
     /// The last Edit ▸ Find… (Find Next continues it).
     #[serde(default)]
     pub find: Option<project_tools::FindState>,
-    /// The values Sequence ▸ Shorts ▸ Layout… last applied (the dialog opens with them).
+    /// The values Shorts ▸ Layout… last applied (the dialog opens with them).
     #[serde(default)]
     pub shorts_layout: Option<serde_json::Value>,
-    /// The options Sequence ▸ Shorts ▸ Word Captions… last applied.
+    /// The options Shorts ▸ Word Captions… last applied.
     #[serde(default)]
     pub shorts_captions: Option<serde_json::Value>,
+    /// The options Shorts ▸ Formats… (or a format from the menu) last applied.
+    #[serde(default)]
+    pub shorts_format: Option<serde_json::Value>,
 }
 
 /// Events for frontends (drained each frame).
@@ -435,7 +440,7 @@ pub struct Session {
     pub media_jobs: Vec<proxies::PendingJob>,
     /// Mask tracking jobs whose keyframes are still being written.
     pub mask_jobs: Vec<masks::PendingTrack>,
-    /// Sequence ▸ Shorts ▸ Track Model jobs whose keyframes are applied when they finish.
+    /// Shorts ▸ Track Model jobs whose keyframes are applied when they finish.
     pub model_jobs: Vec<shorts_track::PendingModel>,
     /// Scene Edit Detection jobs whose results are applied when they finish.
     pub scene_jobs: Vec<scene_detect::PendingScene>,
@@ -1319,6 +1324,8 @@ mod sequence_tools_tests;
 mod settings_tests;
 #[cfg(test)]
 mod shortcuts_tests;
+#[cfg(test)]
+mod shorts_formats_tests;
 #[cfg(test)]
 mod shorts_fx_tests;
 #[cfg(test)]

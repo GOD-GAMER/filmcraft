@@ -1,4 +1,4 @@
-//! Tests of Sequence ▸ Shorts, part two (`shorts_fx`): each command edits as one undo step,
+//! Tests of the Shorts menu, part two (`shorts_fx`): each command edits as one undo step,
 //! rejects hostile parameters, and the result renders.
 
 use std::sync::Arc;
@@ -89,7 +89,7 @@ fn every_new_command_is_in_sequence_shorts() {
         "shorts.duckMusic",
         "shorts.soundEffect",
     ] {
-        assert_eq!(menu(id), ["Sequence", "Shorts"], "{id}");
+        assert_eq!(menu(id).first().copied(), Some("Shorts"), "{id}");
         assert!(Session::default().execute(id, json!({})).is_err(), "{id} needs a sequence");
     }
 }

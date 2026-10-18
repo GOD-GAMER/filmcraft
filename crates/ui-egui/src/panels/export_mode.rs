@@ -1136,6 +1136,13 @@ fn preview_column(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, seq_id:
     child.add_space(4.0);
     let est = child.label(egui::RichText::new(tlf!("Estimated file size: {size}", size = format_bytes(sum.estimated_bytes))).color(t.text_dim));
     reg.add("export.estimate", est.rect, sum.estimated_size.clone());
+    // a YouTube Shorts or TikTok preset: whether the short's length suits the platform
+    if let Some(pf) = filmcraft_engine::shorts_formats::PLATFORMS.iter().find(|p| preset_key(p.preset) == preset_key(&ex.preset)) {
+        for (i, note) in crate::panels::shorts_dialogs::length_notes(pf, (range.1 - range.0).seconds()).into_iter().enumerate() {
+            let r = child.label(egui::RichText::new(&note.0).color(if note.1 { t.render_yellow } else { t.text_dim }));
+            reg.add(format!("export.platformNote.{i}"), r.rect, note.0);
+        }
+    }
     // buttons
     let go = Rect::from_min_size(pos2(rect.max.x - 120.0, rect.max.y - 44.0), vec2(104.0, 30.0));
     let queue = Rect::from_min_size(pos2(go.min.x - 132.0, go.min.y), vec2(122.0, 30.0));

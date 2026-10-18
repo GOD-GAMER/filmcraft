@@ -1,4 +1,4 @@
-//! Short-form (vertical video) helpers, used by the engine's Sequence ▸ Shorts commands:
+//! Short-form (vertical video) helpers, used by the engine's Shorts menu commands:
 //!
 //! - [`word_beats`] groups transcript words into the short phrases shown on screen together, and
 //!   [`caption_spans`] gives each spoken word of a phrase its own frame-aligned display span (the

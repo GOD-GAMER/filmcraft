@@ -1,4 +1,4 @@
-//! Sequence ▸ Shorts, part two: automated effects for stream clips.
+//! the Shorts menu, part two: automated effects for stream clips.
 //!
 //! - **Find Hype Moments**: the loud reactions in the sequence's mix (screams, laughs) get a
 //!   punch-in, a shake and a marker.
@@ -24,14 +24,14 @@ use filmcraft_project::{
 use filmcraft_time::{Tick, TimeRange};
 use serde_json::{Value, json};
 
-use crate::commands::{bad, bool_p, str_p, time_p};
+use crate::commands::{bad, bool_p, str_p};
 use crate::shorts::{GraphicClip, Hit, after, apply_hits, color_p, flash_layer, footage_at, is_footage, num_p, place_graphic_track, put, set_static};
 use crate::{EngineError, Result, Session};
 
 /// The longest stretch of audio Find Hype Moments analyses (mark In/Out for longer sequences).
 const MAX_HYPE_SECONDS: f64 = 3.0 * 3600.0;
 /// Level curve resolution for Find Hype Moments.
-const HOP_S: f64 = 0.05;
+pub(crate) const HOP_S: f64 = 0.05;
 /// The name every bleep clip gets; Word Captions masks the words under one.
 const BLEEP: &str = "Bleep";
 /// A bleep clip's name lists the words it covers after this ("Bleep: fuck, shit"), so captions
@@ -132,7 +132,7 @@ fn effects_at_with(s: &mut Session, label: &str, times: &[Tick], k: Picks, flash
 }
 
 /// The level curve (dBFS every [`HOP_S`]) of the active sequence's mix over `from..to`.
-fn mix_levels(s: &Session, from: Tick, to: Tick) -> Result<Vec<f64>> {
+pub(crate) fn mix_levels(s: &Session, from: Tick, to: Tick) -> Result<Vec<f64>> {
     let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
     let sr = q.settings.sample_rate.max(8000);
     let start = from.to_units_floor(i64::from(sr));
@@ -335,7 +335,7 @@ pub(crate) fn freeze_frame(s: &mut Session, p: &Value) -> Result<Value> {
     let secs = num_p(p, "seconds", 1.5, 0.2, 30.0, CMD)?;
     let zoom = num_p(p, "zoom", 115.0, 100.0, 300.0, CMD)? / 100.0;
     let with_flash = bool_p(p, "flash").unwrap_or(true);
-    let t = time_p(s, p, "").unwrap_or_else(|| s.playhead());
+    let t = crate::shorts::at_time(s, p).unwrap_or_else(|| s.playhead());
     let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
     let rate = q.settings.frame_rate;
     let t = rate.snap(t);
@@ -419,16 +419,27 @@ pub(crate) fn hook_title(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let secs = num_p(p, "seconds", 2.5, 0.5, 30.0, CMD)?;
     let color = color_p(p, "color", CMD)?.unwrap_or([1.0, 0.84, 0.04, 1.0]);
-    let start = time_p(s, p, "").unwrap_or(Tick::ZERO);
+    let start = crate::shorts::at_time(s, p).unwrap_or(Tick::ZERO);
     let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
     let (w, h, rate) = (q.settings.width, q.settings.height, q.settings.frame_rate);
     let (fw, fh) = (f64::from(w), f64::from(h));
+    let y = num_p(p, "y", if fh > fw { 0.2 } else { 0.16 }, 0.0, 1.0, CMD)?;
+    let width = num_p(p, "width", 0.9, 0.2, 1.0, CMD)?;
     let dur = rate.snap_nearest(Tick::from_seconds_f64(secs)).max(rate.frame_duration());
     let frame = rate.frame_duration().max(Tick(1));
+    let layer = hook_layer(&text, (w, h), Vec2::new(fw / 2.0, fh * y), fw * width, dur, frame, color);
+    let track = place_graphic_track(s, "Hook Title", "Hook Title", vec![(rate.snap(start), dur, text.clone(), vec![layer])])?;
+    Ok(json!({"track": track, "text": text}))
+}
+
+/// A hook-style title: big bold capitals with a black outline that slam in, wobble while they
+/// are up and fade at the end (clip-relative keyframes), centred at `at`, at most `max_w` pixels
+/// wide.
+pub(crate) fn hook_layer(text: &str, frame: (u32, u32), at: Vec2, max_w: f64, dur: Tick, frame_dur: Tick, color: [f32; 4]) -> EffectInstance {
+    let (fw, fh) = (f64::from(frame.0), f64::from(frame.1));
     let chars = text.chars().count().max(1) as f64;
-    let size = (fw.min(fh) * 0.11).min(fw * 0.9 / (chars * EM_PER_CHAR)).max(8.0);
-    let y = if fh > fw { fh * 0.2 } else { fh * 0.16 };
-    let mut layer = filmcraft_project::graphic::new_text_layer(&text, Vec2::new(fw / 2.0, y), size);
+    let size = (fw.min(fh) * 0.11).min(max_w.max(1.0) / (chars * EM_PER_CHAR)).max(8.0);
+    let mut layer = filmcraft_project::graphic::new_text_layer(text, at, size);
     for (k, v) in [
         ("name", ParamValue::Text("Hook".into())),
         ("font", ParamValue::Text("Inter".into())),
@@ -448,7 +459,7 @@ pub(crate) fn hook_title(s: &mut Session, p: &Value) -> Result<Value> {
     // slams in, wobbles while it is up, fades at the end
     let key = |t: Tick, v: f64| Keyframe::new(t, ParamValue::Float(v));
     let mut scale = Param::new(ParamValue::Float(100.0));
-    scale.keyframes = vec![key(Tick::ZERO, 40.0), key(after(Tick::ZERO, 3, frame), 115.0), key(after(Tick::ZERO, 6, frame), 100.0)];
+    scale.keyframes = vec![key(Tick::ZERO, 40.0), key(after(Tick::ZERO, 3, frame_dur), 115.0), key(after(Tick::ZERO, 6, frame_dur), 100.0)];
     layer.params.insert("scale".into(), scale);
     let mut rot = Param::new(ParamValue::Float(-3.0));
     let half = Tick::from_seconds_f64(0.5);
@@ -464,8 +475,7 @@ pub(crate) fn hook_title(s: &mut Session, p: &Value) -> Result<Value> {
     let mut fade = Param::new(ParamValue::Float(100.0));
     fade.keyframes = vec![key(fade_at, 100.0), key(dur, 0.0)];
     layer.params.insert("opacity".into(), fade);
-    let track = place_graphic_track(s, "Hook Title", "Hook Title", vec![(rate.snap(start), dur, text.clone(), vec![layer])])?;
-    Ok(json!({"track": track, "text": text}))
+    layer
 }
 
 pub(crate) fn progress_bar(s: &mut Session, p: &Value) -> Result<Value> {
@@ -755,7 +765,7 @@ pub(crate) fn duck_music(s: &mut Session, p: &Value) -> Result<Value> {
 
 pub(crate) fn sound_effect(s: &mut Session, p: &Value) -> Result<Value> {
     const CMD: &str = "shorts.soundEffect";
-    let t = time_p(s, p, "").unwrap_or_else(|| s.playhead());
+    let t = crate::shorts::at_time(s, p).unwrap_or_else(|| s.playhead());
     let items: Vec<ItemId> = match crate::commands::item_p(p, "item") {
         Some(i) => vec![i],
         None => s.state.project_selection.clone(),
@@ -806,7 +816,7 @@ pub(crate) fn speed_ramp(s: &mut Session, p: &Value) -> Result<Value> {
     let slow = num_p(p, "speed", 35.0, 5.0, 95.0, CMD)? / 100.0;
     let secs = num_p(p, "seconds", 1.0, 0.2, 30.0, CMD)?;
     let ramp = num_p(p, "ramp", 0.2, 0.0, 5.0, CMD)?;
-    let t = time_p(s, p, "").unwrap_or_else(|| s.playhead());
+    let t = crate::shorts::at_time(s, p).unwrap_or_else(|| s.playhead());
     let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
     let rate = q.settings.frame_rate;
     let frame = rate.frame_duration().max(Tick(1));

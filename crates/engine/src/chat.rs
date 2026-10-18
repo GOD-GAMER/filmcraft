@@ -1,4 +1,4 @@
-//! Chat replays from stream archives, for Sequence ▸ Shorts ▸ Chat Overlay… and Find Chat
+//! Chat replays from stream archives, for Shorts ▸ Chat Overlay… and Find Chat
 //! Highlights….
 //!
 //! Reads the common chat-replay downloads:
