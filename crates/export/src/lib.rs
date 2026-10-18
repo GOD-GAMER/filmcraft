@@ -374,6 +374,9 @@ pub struct ExportSettings {
     /// byte-reproducible like the built-in encoder's (`determinism_tests`).
     #[serde(default)]
     pub hardware_encoding: HardwareEncoding,
+    /// How hard the built-in H.264 encoder works on each frame (Export ▸ Encoding Speed).
+    #[serde(default)]
+    pub h264_speed: H264Speed,
     /// Composite the exported frames on the GPU instead of the CPU reference renderer (Export ▸
     /// GPU rendering: Auto / Off, Off by default). Off = the CPU reference renderer exactly.
     #[serde(default)]
@@ -575,6 +578,7 @@ impl Default for ExportSettings {
             bitrate_mode: BitrateMode::default(),
             crf: DEFAULT_CRF,
             hardware_encoding: HardwareEncoding::default(),
+            h264_speed: H264Speed::default(),
             gpu_rendering: GpuRendering::Off,
             max_bitrate_kbps: None,
             adaptive_bitrate: None,
@@ -1682,6 +1686,11 @@ fn h264_factory(format: Format, w: u32, h: u32, rate: FrameRate, s: &ExportSetti
     cfg.aud = s.format.is_mxf();
     cfg.keyint = s.keyframe_distance.filter(|k| *k > 0).unwrap_or_else(|| (rate.num as f64 / rate.den as f64 * 2.0).round().max(1.0) as u32);
     cfg.slices = h264_slices(h);
+    cfg.preset = match s.h264_speed {
+        H264Speed::Faster => filmcraft_h264enc::Preset::Speed,
+        H264Speed::Balanced => filmcraft_h264enc::Preset::Balanced,
+        H264Speed::Better => filmcraft_h264enc::Preset::Quality,
+    };
     let kbps = s.bitrate_kbps.max(100);
     let max = s.max_bitrate_kbps.filter(|m| *m >= kbps).unwrap_or_else(|| (u64::from(kbps) * 3 / 2).min(u64::from(u32::MAX)) as u32);
     cfg.rate = match s.bitrate_mode {

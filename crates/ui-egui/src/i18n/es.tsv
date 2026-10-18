@@ -3754,8 +3754,8 @@
 	{len}: fits {name} (up to {max}).	{len}: cabe en {name} (hasta {max}).
 	YouTube Shorts 1080×1920	YouTube Shorts 1080×1920
 	TikTok 1080×1920	TikTok 1080×1920
-	H.264 9:16 for TikTok, scaled to fill, VBR 1 pass, 8 Mbps	H.264 9:16 para TikTok, escalado para rellenar, VBR 1 pasada, 8 Mbps
-	H.264 9:16 for YouTube Shorts (up to 3 minutes), scaled to fill, VBR 1 pass, 16 Mbps	H.264 9:16 para YouTube Shorts (hasta 3 minutos), escalado para rellenar, VBR 1 pasada, 16 Mbps
+	H.264 9:16 for TikTok, scaled to fill, VBR 1 pass, 8 Mbps, faster encoding (the hardware encoder when there is one)	H.264 9:16 para TikTok, escalado para rellenar, VBR 1 pasada, 8 Mbps, codificación más rápida (el codificador por hardware cuando lo hay)
+	H.264 9:16 for YouTube Shorts (up to 3 minutes), scaled to fill, VBR 1 pass, 16 Mbps, faster encoding (the hardware encoder when there is one)	H.264 9:16 para YouTube Shorts (hasta 3 minutos), escalado para rellenar, VBR 1 pasada, 16 Mbps, codificación más rápida (el codificador por hardware cuando lo hay)
 	Auto Edit…	Edición automática…
 	 (stream captions cut off)	 (subtítulos del directo recortados)
 	All text is clear of the app's buttons and bars.	Todo el texto queda libre de los botones y barras de la app.
@@ -3792,3 +3792,7 @@
 	Punch-ins: {n}	Zooms de golpe: {n}
 	{pct} % of the model's face is in view.	Se ve el {pct} % de la cara del modelo.
 	{pct} % of the text is under the app's buttons or bars.	El {pct} % del texto queda bajo los botones o barras de la app.
+	Encoding Speed	Velocidad de codificación
+	Faster	Más rápida
+	Balanced	Equilibrada
+	Better Quality	Mejor calidad

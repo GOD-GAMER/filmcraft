@@ -1183,3 +1183,83 @@ fn transform_shutter_uses_the_sequence_frame_rate_without_env() {
         assert!(delta(frame) > 1e-3, "frame {frame} moves but is sharp");
     }
 }
+
+/// Rounded Crop works out each row's untouched middle and cleared ends at once; every pixel must
+/// still be what the pixel-by-pixel version gives, bit for bit.
+#[test]
+fn rounded_crop_rows_match_the_pixel_by_pixel_crop() {
+    fn reference(img: &mut Image, e: &EffectInstance, cx: &FxCtx) {
+        let (w, h) = (img.w as f32, img.h as f32);
+        let (l, t, r, b) =
+            (fv(e, "left", cx) / 100.0 * w, fv(e, "top", cx) / 100.0 * h, w - fv(e, "right", cx) / 100.0 * w, h - fv(e, "bottom", cx) / 100.0 * h);
+        let rad = (fv(e, "radius", cx) * cx.px_scale).min(((r - l).min(b - t) / 2.0).max(0.0));
+        let fe = fv(e, "feather", cx) * cx.px_scale;
+        let border = fv(e, "border", cx) * cx.px_scale;
+        let bc = lin(cv(e, "border_color", cx));
+        let wi = img.w;
+        for (y, row) in img.px.chunks_mut(wi * 4).enumerate() {
+            for x in 0..wi {
+                let d = distort::round_rect_sdf(x as f32 + 0.5, y as f32 + 0.5, l, t, r, b, rad);
+                let p = &mut row[x * 4..x * 4 + 4];
+                if border > 0.0 {
+                    let k = (0.5 - d).clamp(0.0, 1.0) - (0.5 - d - border).clamp(0.0, 1.0);
+                    if k > 0.0 {
+                        over(p, [bc[0] * k, bc[1] * k, bc[2] * k, k]);
+                    }
+                }
+                let a = if fe > 0.0 { (-d / fe).clamp(0.0, 1.0) } else { (0.5 - d).clamp(0.0, 1.0) };
+                if a < 1.0 {
+                    for v in p.iter_mut() {
+                        *v *= a;
+                    }
+                }
+            }
+        }
+    }
+    let pic = picture(83, 61);
+    let cases: &[[f64; 7]] = &[
+        // left, top, right, bottom, radius, feather, border
+        [0.0, 0.0, 0.0, 0.0, 40.0, 0.0, 0.0],
+        [10.0, 20.0, 30.0, 5.0, 8.0, 0.0, 0.0],
+        [10.0, 20.0, 30.0, 5.0, 8.0, 3.5, 0.0],
+        [10.0, 20.0, 30.0, 5.0, 8.0, 0.0, 2.5],
+        [40.0, 10.0, 2.0, 30.0, 25.0, 6.0, 4.0],
+        [-15.0, -10.0, -5.0, 60.0, 0.0, 0.0, 0.0],
+        [49.0, 49.0, 49.0, 49.0, 3.0, 1.0, 1.0],
+        [70.0, 0.0, 70.0, 0.0, 5.0, 0.0, 0.0],
+        [0.5, 0.25, 99.0, 0.0, 0.0, 0.0, 0.0],
+        [f64::NAN, 10.0, 10.0, 10.0, 4.0, 0.0, 0.0],
+        [10.0, 10.0, 10.0, 10.0, f64::INFINITY, 0.0, 0.0],
+    ];
+    for (i, c) in cases.iter().enumerate() {
+        let mut e = inst("rounded_crop");
+        for (k, v) in ["left", "top", "right", "bottom", "radius", "feather", "border"].iter().zip(c) {
+            setf(&mut e, k, *v);
+        }
+        for scale in [1.0f32, 0.5] {
+            let cx = FxCtx { px_scale: scale, ..cx() };
+            let got = run("rounded_crop", &e, &pic, &cx);
+            let mut want = pic.clone();
+            reference(&mut want, &e, &cx);
+            assert_eq!(got.px.iter().map(|v| v.to_bits()).collect::<Vec<_>>(), want.px.iter().map(|v| v.to_bits()).collect::<Vec<_>>(), "case {i} at {scale}");
+        }
+    }
+}
+
+/// A Camera Shake with nothing to shake (between the hits of a keyframed one) leaves the picture
+/// exactly as it is, motion blur or not.
+#[test]
+fn camera_shake_at_rest_changes_nothing() {
+    let pic = picture(64, 40);
+    let mut e = inst("camera_shake");
+    for k in ["amount", "rotation", "zoom"] {
+        setf(&mut e, k, 0.0);
+    }
+    for blur in [0.0, 40.0, 100.0] {
+        setf(&mut e, "motion_blur", blur);
+        let o = run("camera_shake", &e, &pic, &cx());
+        assert_eq!(o.px.iter().map(|v| v.to_bits()).collect::<Vec<_>>(), pic.px.iter().map(|v| v.to_bits()).collect::<Vec<_>>(), "blur {blur}");
+    }
+    setf(&mut e, "zoom", 3.0);
+    assert!(max_diff(&run("camera_shake", &e, &pic, &cx()), &pic) > 0.0, "a zoom shakes");
+}

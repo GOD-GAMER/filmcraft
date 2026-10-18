@@ -3729,8 +3729,8 @@
 	{len}: fits {name} (up to {max}).	{len}：符合 {name} 的要求（最长 {max}）。
 	YouTube Shorts 1080×1920	YouTube Shorts 1080×1920
 	TikTok 1080×1920	TikTok 1080×1920
-	H.264 9:16 for TikTok, scaled to fill, VBR 1 pass, 8 Mbps	H.264 9:16（TikTok），缩放填充，VBR 1 遍，8 Mbps
-	H.264 9:16 for YouTube Shorts (up to 3 minutes), scaled to fill, VBR 1 pass, 16 Mbps	H.264 9:16（YouTube Shorts，最长 3 分钟），缩放填充，VBR 1 遍，16 Mbps
+	H.264 9:16 for TikTok, scaled to fill, VBR 1 pass, 8 Mbps, faster encoding (the hardware encoder when there is one)	H.264 9:16（TikTok），缩放填充，VBR 1 遍，8 Mbps，更快编码（有硬件编码器时使用硬件编码器）
+	H.264 9:16 for YouTube Shorts (up to 3 minutes), scaled to fill, VBR 1 pass, 16 Mbps, faster encoding (the hardware encoder when there is one)	H.264 9:16（YouTube Shorts，最长 3 分钟），缩放填充，VBR 1 遍，16 Mbps，更快编码（有硬件编码器时使用硬件编码器）
 	Auto Edit…	自动剪辑…
 	 (stream captions cut off)	（已裁掉直播自带字幕）
 	All text is clear of the app's buttons and bars.	所有文字都避开了应用的按钮和栏。
@@ -3767,3 +3767,7 @@
 	Punch-ins: {n}	推近：{n}
 	{pct} % of the model's face is in view.	模型的脸有 {pct}% 可见。
 	{pct} % of the text is under the app's buttons or bars.	有 {pct}% 的文字被应用的按钮或栏挡住。
+	Encoding Speed	编码速度
+	Faster	更快
+	Balanced	均衡
+	Better Quality	更高画质

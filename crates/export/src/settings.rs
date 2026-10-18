@@ -61,6 +61,31 @@ impl H264Profile {
     }
 }
 
+/// Export ▸ Encoding Speed: how hard FilmCraft's own H.264 encoder searches for the best way to
+/// encode each frame. Faster exports about a third faster and, at the same bitrate, loses a
+/// fraction of a dB (at the bitrates of the social presets, whose sites re-encode every upload,
+/// nothing anyone can see); Better searches hardest and is the slowest.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum H264Speed {
+    Faster,
+    #[default]
+    Balanced,
+    Better,
+}
+
+impl H264Speed {
+    pub const ALL: [H264Speed; 3] = [H264Speed::Faster, H264Speed::Balanced, H264Speed::Better];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            H264Speed::Faster => "Faster",
+            H264Speed::Balanced => "Balanced",
+            H264Speed::Better => "Better Quality",
+        }
+    }
+}
+
 /// Export ▸ Hardware encoding: whether H.264 may be encoded by the system's hardware video encoder
 /// (VideoToolbox on macOS, NVENC on NVIDIA GPUs on Windows) instead of FilmCraft's own encoder. Off
 /// by default: hardware encoders make different streams, and exports are otherwise byte-identical

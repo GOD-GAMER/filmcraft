@@ -351,6 +351,11 @@ pub fn camera_shake(img: &mut Image, e: &EffectInstance, cx: &FxCtx) {
     let zoom = fv(e, "zoom", cx) as f64 / 100.0;
     let octaves = fv(e, "complexity", cx).clamp(1.0, 6.0) as usize;
     let blur = fv(e, "motion_blur", cx) as f64 / 100.0;
+    // nothing to shake (between the hits of a keyframed shake): the picture as it is, without the
+    // five copies motion blur would average
+    if !(amt.abs() > 1e-9 || rot.abs() > 1e-9 || zoom.abs() > 1e-9) {
+        return;
+    }
     let fps = cx.env.map_or(30.0, |env| env.frame_rate());
     let shake = |t: f64, ch: u64| -> f64 {
         let (mut s, mut a, mut f, mut norm) = (0.0, 1.0, 1.0, 0.0);
@@ -439,23 +444,63 @@ pub fn rounded_crop(img: &mut Image, e: &EffectInstance, cx: &FxCtx) {
     let border = fv(e, "border", cx) * cx.px_scale;
     let bc = lin(cv(e, "border_color", cx));
     let wi = img.w;
+    let pixel = |x: usize, y: usize, p: &mut [f32]| {
+        let d = round_rect_sdf(x as f32 + 0.5, y as f32 + 0.5, l, t, r, b, rad);
+        if border > 0.0 {
+            // coverage of the band −border < d < 0 just inside the edge
+            let k = (0.5 - d).clamp(0.0, 1.0) - (0.5 - d - border).clamp(0.0, 1.0);
+            if k > 0.0 {
+                over(p, [bc[0] * k, bc[1] * k, bc[2] * k, k]);
+            }
+        }
+        let a = if fe > 0.0 { (-d / fe).clamp(0.0, 1.0) } else { (0.5 - d).clamp(0.0, 1.0) };
+        if a < 1.0 {
+            for v in p.iter_mut() {
+                *v *= a;
+            }
+        }
+    };
+    // Along a row the distance only grows away from the rectangle's centre, so each row is a
+    // middle run the effect leaves as it is (deep inside, past the feather and the border), two
+    // outer runs it clears (outside), and the edge pixels between, worked out one by one exactly
+    // as before. Only for finite settings: anything else takes every pixel one by one.
+    let (d_in, d_out) = (if border > 0.0 { -(border + 0.5) } else { f32::INFINITY }.min(if fe > 0.0 { -fe } else { -0.5 }), 0.5f32);
+    let finite = [l, t, r, b, rad, fe, border].iter().all(|v| v.is_finite());
+    let cx = (l + r) / 2.0;
+    // the first column whose centre is at or right of the rectangle's centre
+    let mid = if finite { ((cx - 0.5).ceil().max(0.0) as usize).min(wi) } else { 0 };
     img.px.par_chunks_mut(wi * 4).enumerate().for_each(|(y, row)| {
-        for x in 0..wi {
-            let d = round_rect_sdf(x as f32 + 0.5, y as f32 + 0.5, l, t, r, b, rad);
-            let p = &mut row[x * 4..x * 4 + 4];
-            if border > 0.0 {
-                // coverage of the band −border < d < 0 just inside the edge
-                let k = (0.5 - d).clamp(0.0, 1.0) - (0.5 - d - border).clamp(0.0, 1.0);
-                if k > 0.0 {
-                    over(p, [bc[0] * k, bc[1] * k, bc[2] * k, k]);
-                }
+        if !finite {
+            for x in 0..wi {
+                pixel(x, y, &mut row[x * 4..x * 4 + 4]);
             }
-            let a = if fe > 0.0 { (-d / fe).clamp(0.0, 1.0) } else { (0.5 - d).clamp(0.0, 1.0) };
-            if a < 1.0 {
-                for v in p.iter_mut() {
-                    *v *= a;
-                }
+            return;
+        }
+        let d = |x: usize| round_rect_sdf(x as f32 + 0.5, y as f32 + 0.5, l, t, r, b, rad);
+        // left of the centre the distance falls as x grows, right of it it rises
+        let first = |lo: usize, hi: usize, pred: &dyn Fn(usize) -> bool| -> usize {
+            let (mut lo, mut hi) = (lo, hi);
+            while lo < hi {
+                let m = lo + (hi - lo) / 2;
+                if pred(m) { hi = m } else { lo = m + 1 }
             }
+            lo
+        };
+        let live_l = first(0, mid, &|x| d(x) < d_out);
+        let in_l = first(live_l, mid, &|x| d(x) <= d_in);
+        let in_r = first(mid, wi, &|x| d(x) > d_in);
+        let zero_r = first(in_r, wi, &|x| d(x) >= d_out);
+        for v in &mut row[..live_l * 4] {
+            *v *= 0.0;
+        }
+        for x in live_l..in_l {
+            pixel(x, y, &mut row[x * 4..x * 4 + 4]);
+        }
+        for x in in_r..zero_r {
+            pixel(x, y, &mut row[x * 4..x * 4 + 4]);
+        }
+        for v in &mut row[zero_r * 4..] {
+            *v *= 0.0;
         }
     });
 }

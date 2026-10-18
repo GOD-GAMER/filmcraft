@@ -3753,8 +3753,8 @@
 	{len}: fits {name} (up to {max}).	{len}: {name} に収まります（上限 {max}）。
 	YouTube Shorts 1080×1920	YouTube ショート 1080×1920
 	TikTok 1080×1920	TikTok 1080×1920
-	H.264 9:16 for TikTok, scaled to fill, VBR 1 pass, 8 Mbps	TikTok 向けの H.264 9:16、フレームを埋めるようにスケール、VBR 1 パス、8 Mbps
-	H.264 9:16 for YouTube Shorts (up to 3 minutes), scaled to fill, VBR 1 pass, 16 Mbps	YouTube ショート（最長 3 分）向けの H.264 9:16、フレームを埋めるようにスケール、VBR 1 パス、16 Mbps
+	H.264 9:16 for TikTok, scaled to fill, VBR 1 pass, 8 Mbps, faster encoding (the hardware encoder when there is one)	TikTok 向けの H.264 9:16、フレームを埋めるようにスケール、VBR 1 パス、8 Mbps、高速エンコード（ハードウェアエンコーダーがあればそれを使用）
+	H.264 9:16 for YouTube Shorts (up to 3 minutes), scaled to fill, VBR 1 pass, 16 Mbps, faster encoding (the hardware encoder when there is one)	YouTube ショート（最長 3 分）向けの H.264 9:16、フレームを埋めるようにスケール、VBR 1 パス、16 Mbps、高速エンコード（ハードウェアエンコーダーがあればそれを使用）
 	Auto Edit…	自動編集…
 	 (stream captions cut off)	（配信の字幕はカット）
 	All text is clear of the app's buttons and bars.	すべてのテキストがアプリのボタンやバーにかかっていません。
@@ -3791,3 +3791,7 @@
 	Punch-ins: {n}	パンチイン: {n}
 	{pct} % of the model's face is in view.	モデルの顔の {pct} % が見えています。
 	{pct} % of the text is under the app's buttons or bars.	テキストの {pct} % がアプリのボタンやバーの下にあります。
+	Encoding Speed	エンコード速度
+	Faster	高速
+	Balanced	バランス
+	Better Quality	高画質

@@ -1334,3 +1334,32 @@ fn own_importer_reads_32_bit_flac_at_full_scale() {
         }
     }
 }
+
+/// Export ▸ Encoding Speed picks the built-in H.264 encoder's search effort: the file says which
+/// (its settings SEI), every speed decodes, and settings saved before the option read as Balanced.
+/// The Shorts presets export faster (and take the hardware encoder when there is one).
+#[test]
+fn h264_encoding_speed() {
+    let old: ExportSettings = serde_json::from_value(serde_json::json!({"format": "h264"})).unwrap();
+    assert_eq!(old.h264_speed, H264Speed::Balanced);
+    let json = serde_json::to_value(ExportSettings { h264_speed: H264Speed::Faster, ..Default::default() }).unwrap();
+    assert_eq!(json["h264Speed"], "faster");
+    let (p, seq, m) = matte([0.2, 0.5, 0.8, 1.0], 160, 96, None);
+    let dir = Scratch::new("speed");
+    for (speed, tag) in [(H264Speed::Faster, "preset=speed"), (H264Speed::Balanced, "preset=balanced"), (H264Speed::Better, "preset=quality")] {
+        let path = dir.path(&format!("{speed:?}.mp4"));
+        let s = ExportSettings { format: Format::H264, path: path.clone(), h264_speed: speed, include_audio: false, ..Default::default() };
+        export(&p, seq, &s, &m, &Progress::default()).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(bytes.windows(tag.len()).any(|w| w == tag.as_bytes()), "{speed:?}: {tag}");
+        let src = filmcraft_codecs::open_bytes("x.mp4", bytes.into()).unwrap();
+        let f = src.video_frame(FrameRequest::full(Tick(TICKS_PER_SECOND / 2))).unwrap().to_rgba8();
+        assert!((f[2] as i32 - 204).abs() < 12, "{speed:?}: {:?}", &f[..4]);
+    }
+    for name in ["YouTube Shorts 1080×1920", "TikTok 1080×1920"] {
+        let s = crate::presets::builtin_presets().into_iter().find(|p| p.name == name).expect("preset").settings;
+        assert_eq!((s.h264_speed, s.hardware_encoding), (H264Speed::Faster, HardwareEncoding::Auto), "{name}");
+    }
+    let hd = crate::presets::builtin_presets().into_iter().find(|p| p.name == "YouTube 1080p Full HD").expect("preset").settings;
+    assert_eq!((hd.h264_speed, hd.hardware_encoding), (H264Speed::Balanced, HardwareEncoding::Off), "the other presets as before");
+}

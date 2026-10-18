@@ -724,6 +724,21 @@ fn video_section(ui: &mut egui::Ui, reg: &mut Reg, s: &mut ExportSettings, t: &T
                         s.h264_level = levels[i];
                     }
                 });
+                // how hard the built-in encoder works on each frame (the hardware encoder has its own)
+                row(ui, t, tl!("Encoding Speed"), |ui| {
+                    let o = filmcraft_export::H264Speed::ALL;
+                    let name = |v: filmcraft_export::H264Speed| match v {
+                        filmcraft_export::H264Speed::Faster => tl!("Faster"),
+                        filmcraft_export::H264Speed::Balanced => tl!("Balanced"),
+                        filmcraft_export::H264Speed::Better => tl!("Better Quality"),
+                    };
+                    let labels: Vec<(String, bool)> = o.iter().map(|v| (name(*v).to_string(), true)).collect();
+                    if let Some(i) = combo(ui, reg, "export.video.speed", name(s.h264_speed), &labels, 140.0)
+                        && let Some(v) = o.get(i)
+                    {
+                        s.h264_speed = *v;
+                    }
+                });
             }
             row(ui, t, tl!("Bitrate Encoding"), |ui| {
                 // a hardware encoder has one pass and no constant-quality mode: H.265 offers neither

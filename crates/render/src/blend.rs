@@ -248,6 +248,23 @@ pub fn composite(dst: &mut Image, src: &Image, opacity: f32, mode: Blend) {
 /// (`x0`, `y0`) of `dst`. The rest of the layer is transparent, which leaves `dst` as it is, so only
 /// the rectangle is visited; its pixels are mixed exactly as [`composite`] mixes them (the dissolve
 /// pattern follows the pixel's place in `dst`). The part of the rectangle outside `dst` is ignored.
+/// `img` as [`composite`] in Normal mode would leave a transparent black image it was mixed into
+/// with `opacity`: each pixel times the opacity where that has alpha, transparent black elsewhere.
+pub fn over_nothing(img: &mut Image, opacity: f32) {
+    img.px.par_chunks_mut(4).for_each(|p| {
+        let sp = [p[0] * opacity, p[1] * opacity, p[2] * opacity, p[3] * opacity];
+        if sp[3] <= 0.0 {
+            p.fill(0.0);
+        } else {
+            // exactly `composite`'s arithmetic over a canvas pixel of 0
+            let k = 1.0 - sp[3];
+            for c in 0..4 {
+                p[c] = sp[c] + 0.0 * k;
+            }
+        }
+    });
+}
+
 pub fn composite_at(dst: &mut Image, src: &Image, x0: usize, y0: usize, opacity: f32, mode: Blend) {
     let (cw, ch) = (src.w.min(dst.w.saturating_sub(x0)), src.h.min(dst.h.saturating_sub(y0)));
     if cw == 0 || ch == 0 || src.px.len() != src.w * src.h * 4 {

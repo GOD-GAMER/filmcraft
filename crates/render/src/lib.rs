@@ -240,18 +240,30 @@ pub(crate) fn render_seq_tracks(project: &Project, seq: &Sequence, t: Tick, opts
             continue;
         }
         match item_layer_ex(project, seq, item, t, opts, sources, &tc, true) {
-            Some(Layer::Full { image, opacity, blend: bl, opaque }) => {
+            Some(Layer::Full { mut image, opacity, blend: bl, opaque }) => {
                 if canvas.is_empty() && opaque && opacity == 1.0 && bl == Blend::Normal && (image.w, image.h) == (w, h) {
                     // mixing an opaque layer over transparent black gives the layer itself
+                    canvas.set(image);
+                } else if canvas.is_empty() && bl == Blend::Normal && (image.w, image.h) == (w, h) {
+                    // over transparent black, Normal mixing gives the layer times its opacity
+                    // where it has alpha, and leaves the rest transparent: done in place, without
+                    // a blank frame to mix into
+                    blend::over_nothing(&mut image, opacity);
                     canvas.set(image);
                 } else {
                     blend::composite(canvas.get(), &image, opacity, bl);
                     pool::recycle_f32(image.px);
                 }
             }
-            Some(Layer::Region { image, x, y, opacity, blend: bl }) => {
-                blend::composite_at(canvas.get(), &image, x, y, opacity, bl);
-                pool::recycle_f32(image.px);
+            Some(Layer::Region { mut image, x, y, opacity, blend: bl }) => {
+                if canvas.is_empty() && bl == Blend::Normal && (x, y) == (0, 0) && (image.w, image.h) == (w, h) {
+                    // a region as big as the frame over nothing (see the Full case)
+                    blend::over_nothing(&mut image, opacity);
+                    canvas.set(image);
+                } else {
+                    blend::composite_at(canvas.get(), &image, x, y, opacity, bl);
+                    pool::recycle_f32(image.px);
+                }
             }
             None => {}
         }
@@ -471,10 +483,20 @@ pub(crate) fn item_layer_ex(
     // How many output pixels one source pixel covers → request a reduced frame when possible.
     let lin = ((motion.a * motion.a + motion.b * motion.b).sqrt()).max((motion.c * motion.c + motion.d * motion.d).sqrt());
     let want = (lin * opts.scale as f64).clamp(1.0 / 64.0, 1.0) as f32;
+    let want = if opts.effects { blurred_want(item, mt, want) } else { want };
     let pi = project.item(item.item)?;
     if matches!(pi.kind, ItemKind::Graphic { .. }) && !(item.has_opacity_masks() || opts.effects && item.has_standard_effects()) {
         // vectors straight to the output: no resampling, crisp at any Motion scale
         let m = Affine::scale(opts.scale as f64, opts.scale as f64).then_apply(&motion);
+        if allow_region {
+            // only the rectangle the text and shapes cover (a caption, a title bar), not a
+            // full-size transparent frame with them on it
+            let (op, bl) = opacity_blend(item, mt);
+            return Some(match graphic_clip::render_graphic_tight(item, mt, src_size, &m, w, h) {
+                Some((image, x, y)) => Layer::Region { image, x: x.max(0) as usize, y: y.max(0) as usize, opacity: op, blend: bl },
+                None => Layer::Region { image: Image::new(0, 0), x: 0, y: 0, opacity: op, blend: bl },
+            });
+        }
         let mut canvas = Image::new(w, h);
         graphic_clip::render_graphic(item, mt, src_size, &m, &mut canvas);
         let (op, bl) = opacity_blend(item, mt);
@@ -503,6 +525,11 @@ pub(crate) fn item_layer_ex(
     }
     let mut layer = match fetched {
         Some((src, frame, n)) => media_image(project, seq, item, t, &src, &frame, n, want),
+        // a cropped clip (a box of a layout): only the part the crop keeps is decoded
+        None if opts.effects && crop_keep(item, mt).is_some() => match cropped_media_image(project, seq, item, t, sources, want, src_size, mt) {
+            Some(img) => img,
+            None => base_layer(project, seq, item, t, opts, sources, want)?,
+        },
         None => base_layer(project, seq, item, t, opts, sources, want)?,
     };
     let px_scale = layer.w as f32 / src_size.0.max(1) as f32;
@@ -529,9 +556,129 @@ pub(crate) fn item_layer_ex(
         }
     }
     mask::apply_opacity_masks(&mut layer, item, mt, px_scale);
-    let placed = if layer.w == w && layer.h == h && identity_placement(&m) { layer } else { layer.transformed(w, h, &m) };
     let (op, bl) = opacity_blend(item, mt);
+    if layer.w == w && layer.h == h && identity_placement(&m) {
+        return Some(Layer::Full { image: layer, opacity: op, blend: bl, opaque: false });
+    }
+    // only the part of the output the layer's picture lands on (a cropped clip, a box): the rest
+    // of a full-size layer would be transparent, resampled and mixed for nothing
+    if allow_region && let Some((image, x, y)) = layer.transformed_region(w, h, &m) {
+        pool::recycle_f32(layer.px);
+        return Some(Layer::Region { image, x, y, opacity: op, blend: bl });
+    }
+    let placed = layer.transformed(w, h, &m);
     Some(Layer::Full { image: placed, opacity: op, blend: bl, opaque: false })
+}
+
+/// Effects that change each pixel on its own, so they give the same picture at any resolution.
+const PIXELWISE: &[&str] = &[
+    "brightness_contrast",
+    "proc_amp",
+    "tint",
+    "black_white",
+    "color_balance",
+    "leave_color",
+    "change_to_color",
+    "color_pass",
+    "gamma_correction",
+    "levels",
+    "invert",
+    "posterize",
+    "asc_cdl",
+    "channel_mix",
+    "color_replace",
+    "alpha_adjust",
+    "video_limiter",
+];
+
+/// The resolution (`want`, a fraction of the source size) to render a clip at whose effects start
+/// with a strong Gaussian Blur, like the blurred backdrop behind a vertical short: every detail
+/// finer than the blur is gone, so the clip renders at a power-of-two fraction of `want` that keeps
+/// the blur at least 6 pixels wide, and Motion scales the smooth result up. The blur and the
+/// colour effects after it then run on 1/4 to 1/64 of the pixels. Only when nothing after the blur
+/// needs detail back: every other effect works on each pixel alone, and nothing is masked.
+fn blurred_want(item: &TrackItem, mt: Tick, want: f32) -> f32 {
+    let mut fx = item.effects.iter().filter(|e| e.enabled && e.def().is_some_and(|d| !d.intrinsic) && !filmcraft_project::graphic::is_layer(e));
+    let Some(first) = fx.next() else { return want };
+    if !matches!(first.effect.as_str(), "gaussian_blur" | "gaussian_blur_legacy") || !first.masks.is_empty() || effects::choice(first, "dimensions") != 0 {
+        return want;
+    }
+    if !fx.all(|e| PIXELWISE.contains(&e.effect.as_str()) && e.masks.is_empty()) || item.effect("opacity").is_some_and(|e| e.enabled && !e.masks.is_empty()) {
+        return want;
+    }
+    // the blur's sigma in pixels at `want` (as the effect computes it)
+    let sigma = first.f64_at("blurriness", mt) * 0.5 * f64::from(want);
+    if !sigma.is_finite() {
+        return want;
+    }
+    let mut k = 1.0f32;
+    while k < 8.0 && sigma / f64::from(k * 2.0) >= 6.0 {
+        k *= 2.0;
+    }
+    (want / k).max(1.0 / 64.0)
+}
+
+/// The part of a clip's picture its effects keep, as fractions of its size (`[x0, y0, x1, y1]`):
+/// the rectangle of its Crop / Rounded Crop, when every other effect leaves each pixel where it is
+/// (an idle Camera Shake, colour effects). Everything outside ends up transparent black whatever
+/// the source holds there. `None` when any of the picture can matter.
+fn crop_keep(item: &TrackItem, mt: Tick) -> Option<[f64; 4]> {
+    let mut keep = [0.0f64, 0.0, 1.0, 1.0];
+    let mut cropped = false;
+    for e in item.effects.iter().filter(|e| e.enabled && e.def().is_some_and(|d| !d.intrinsic) && !filmcraft_project::graphic::is_layer(e)) {
+        // a masked effect only works inside its mask
+        if !e.masks.is_empty() {
+            return None;
+        }
+        match e.effect.as_str() {
+            "rounded_crop" | "crop" => {
+                if e.effect == "crop" && effects::b(e, "zoom") {
+                    return None;
+                }
+                let r = [e.f64_at("left", mt) / 100.0, e.f64_at("top", mt) / 100.0, 1.0 - e.f64_at("right", mt) / 100.0, 1.0 - e.f64_at("bottom", mt) / 100.0];
+                if !r.iter().all(|v| v.is_finite()) {
+                    return None;
+                }
+                keep = [keep[0].max(r[0]), keep[1].max(r[1]), keep[2].min(r[2]), keep[3].min(r[3])];
+                cropped = true;
+            }
+            "camera_shake" if ["amount", "rotation", "zoom"].iter().all(|k| e.f64_at(k, mt) == 0.0) => {}
+            id if PIXELWISE.contains(&id) => {}
+            _ => return None,
+        }
+    }
+    cropped.then_some(keep)
+}
+
+/// The picture of a cropped media clip (see [`crop_keep`]) at `want`, decoded only inside the
+/// crop (with a margin for the crop's anti-aliased edge). `None` for anything but a plain media
+/// frame, which takes [`base_layer`].
+#[allow(clippy::too_many_arguments)]
+fn cropped_media_image(
+    project: &Project,
+    seq: &Sequence,
+    item: &TrackItem,
+    t: Tick,
+    sources: &dyn SourceProvider,
+    want: f32,
+    src_size: (u32, u32),
+    mt: Tick,
+) -> Option<Image> {
+    let keep = crop_keep(item, mt)?;
+    let pi = project.item(item.item)?;
+    if !matches!(pi.kind, ItemKind::Media(_) | ItemKind::Subclip { .. }) {
+        return None;
+    }
+    let (src, frame, n) = media_frame(item, t, sources, want, src_size)?;
+    if interpolation_blend(item, t, src.info().frame_rate()).is_some() {
+        return None;
+    }
+    let (lw, lh) = frame.decimated_size(n);
+    let px = |f: f64, size: usize, margin: f64| -> usize { ((f * size as f64 + margin).max(0.0) as usize).min(size) };
+    let (x0, y0) = (px(keep[0], lw, -2.0), px(keep[1], lh, -2.0));
+    let (x1, y1) = (px(keep[2], lw, 3.0).max(x0), px(keep[3], lh, 3.0).max(y0));
+    let region = filmcraft_frame::Region { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    Some(colorman::decode_within(project, item.item, &frame, n, &seq.settings.color, region))
 }
 
 /// The layer of a plain media frame (see [`item_layer_ex`]): only the part with alpha when the frame

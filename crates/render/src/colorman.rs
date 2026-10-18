@@ -68,9 +68,30 @@ pub fn gpu_input(project: &Project, item: ItemId, pipe: &ColorPipeline, cs: Colo
 
 /// Decode a frame of `item` (box-decimated by `n`) into the working space of `pipe`.
 pub fn decode(project: &Project, item: ItemId, frame: &VideoFrame, n: usize, pipe: &ColorPipeline) -> Image {
+    decode_taps(project, item, frame, n, pipe, Taps::Box)
+}
+
+/// [`decode`] of only the rectangle `keep` of the decimated picture, transparent black elsewhere
+/// (see [`VideoFrame::to_linear_f32_within_with`]), for a clip cropped to it right after.
+pub fn decode_within(project: &Project, item: ItemId, frame: &VideoFrame, n: usize, pipe: &ColorPipeline, keep: filmcraft_frame::Region) -> Image {
+    decode_taps(project, item, frame, n, pipe, Taps::Within(keep))
+}
+
+/// Which source pixels [`decode_taps`] reads for each output pixel.
+#[derive(Clone, Copy)]
+enum Taps {
+    Box,
+    Within(filmcraft_frame::Region),
+}
+
+fn decode_taps(project: &Project, item: ItemId, frame: &VideoFrame, n: usize, pipe: &ColorPipeline, taps: Taps) -> Image {
+    let convert = |table: Option<&filmcraft_color::DecodeTable>| match taps {
+        Taps::Within(keep) => frame.to_linear_f32_within_with(n, table, keep),
+        Taps::Box => frame.to_linear_f32_decimated_with(n, table),
+    };
     let cs = source_space(project, item, frame);
     if !needs_management(pipe, cs, frame) {
-        let (w, h, px) = frame.to_linear_f32_decimated(n);
+        let (w, h, px) = convert(None);
         return Image { w, h, px };
     }
     // RGB stills/generators carry full-range code values; YUV carries its own range flag
@@ -81,7 +102,7 @@ pub fn decode(project: &Project, item: ItemId, frame: &VideoFrame, n: usize, pip
     let t = input_transform(cs, range, pipe, source_peak_nits(project, item));
     let float_src = matches!(frame.data, filmcraft_frame::PixelData::RgbaF32(_));
     // float frames are linear already: only the gamut/tone stages apply to them
-    let (w, h, px) = frame.to_linear_f32_decimated_with(n, if float_src { None } else { Some(&t.table) });
+    let (w, h, px) = convert(if float_src { None } else { Some(&t.table) });
     let mut img = Image { w, h, px };
     if t.has_pixel_stage() {
         img.map_rgb(|c, _, _| t.apply(c));

@@ -293,6 +293,31 @@ impl VideoFrame {
         (ow, oh, out)
     }
 
+    /// Like [`VideoFrame::to_linear_f32_decimated_with`], but only the rectangle `keep` of the
+    /// decimated picture is converted: the rest is transparent black. Each pixel inside is exactly
+    /// what the full conversion gives there. For a clip that is cropped to `keep` right after, whose
+    /// other pixels end up transparent anyway.
+    pub fn to_linear_f32_within_with(&self, n: usize, decode: Option<&DecodeTable>, keep: Region) -> (usize, usize, Vec<f32>) {
+        let n = n.max(1);
+        let (ow, oh) = self.decimated_size(n);
+        let r = keep.clip(ow, oh);
+        let mut out = pool::take_f32_overwritten(ow * oh * 4);
+        let (top, rest) = out.split_at_mut((r.y * ow * 4).min(ow * oh * 4));
+        top.fill(0.0);
+        let (mid, bottom) = rest.split_at_mut((r.h * ow * 4).min(rest.len()));
+        bottom.fill(0.0);
+        if r.is_empty() {
+            mid.fill(0.0);
+            return (ow, oh, out);
+        }
+        for row in mid.chunks_exact_mut(ow * 4) {
+            row[..r.x * 4].fill(0.0);
+            row[(r.x + r.w) * 4..].fill(0.0);
+        }
+        self.convert_region_into(n, decode, r, mid, ow, r.x);
+        (ow, oh, out)
+    }
+
     /// The size of the picture after `n`×`n` box decimation.
     pub fn decimated_size(&self, n: usize) -> (usize, usize) {
         let n = n.max(1);
@@ -315,18 +340,28 @@ impl VideoFrame {
     /// Convert the rectangle `r` (inside the decimated picture) into `out`, which must hold exactly
     /// `r.w * r.h * 4` floats; every one of them is written.
     fn convert_region(&self, n: usize, decode: Option<&DecodeTable>, r: Region, out: &mut [f32]) {
+        self.convert_region_into(n, decode, r, out, r.w, 0);
+    }
+
+    /// [`Self::convert_region`] into rows `stride` pixels long, the rectangle starting `x_off`
+    /// pixels into each: `out` holds exactly `r.h` such rows, and only the rectangle's part of each
+    /// is written.
+    fn convert_region_into(&self, n: usize, decode: Option<&DecodeTable>, r: Region, out: &mut [f32], stride: usize, x_off: usize) {
         let (w, h) = (self.width as usize, self.height as usize);
-        if r.w == 0 || r.h == 0 || out.len() != r.w * r.h * 4 {
+        if r.w == 0 || r.h == 0 || out.len() != stride * r.h * 4 || x_off + r.w > stride {
             return;
         }
         if w == 0 || h == 0 {
-            out.fill(0.0);
+            for row in out.chunks_exact_mut(stride * 4) {
+                row[x_off * 4..(x_off + r.w) * 4].fill(0.0);
+            }
             return;
         }
         if let PixelData::RgbaF32(d) = &self.data
             && n == 1
         {
-            for (ry, row) in out.chunks_exact_mut(r.w * 4).enumerate() {
+            for (ry, row) in out.chunks_exact_mut(stride * 4).enumerate() {
+                let row = &mut row[x_off * 4..(x_off + r.w) * 4];
                 let start = ((r.y + ry) * w + r.x) * 4;
                 match d.get(start..start + r.w * 4) {
                     Some(src) => row.copy_from_slice(src),
@@ -346,7 +381,8 @@ impl VideoFrame {
         let inv = 1.0 / (n * n) as f32;
         match &self.data {
             PixelData::RgbaF32(d) => {
-                out.par_chunks_mut(r.w * 4).enumerate().for_each(|(ry, row)| {
+                out.par_chunks_mut(stride * 4).enumerate().for_each(|(ry, row)| {
+                    let row = &mut row[x_off * 4..(x_off + r.w) * 4];
                     let oy = r.y + ry;
                     for rx in 0..r.w {
                         let ox = r.x + rx;
@@ -376,7 +412,8 @@ impl VideoFrame {
                     }
                     None => srgb_u8_to_linear_table(),
                 };
-                out.par_chunks_mut(r.w * 4).enumerate().for_each(|(ry, row)| {
+                out.par_chunks_mut(stride * 4).enumerate().for_each(|(ry, row)| {
+                    let row = &mut row[x_off * 4..(x_off + r.w) * 4];
                     let oy = r.y + ry;
                     for rx in 0..r.w {
                         let ox = r.x + rx;
@@ -408,7 +445,44 @@ impl VideoFrame {
                 let kg = 1.0 - kr - kb;
                 let (cr_r, cb_b) = (2.0 * (1.0 - kr), 2.0 * (1.0 - kb));
                 let (cr_g, cb_g) = (cr_r * kr / kg, cb_b * kb / kg);
-                out.par_chunks_mut(r.w * 4).enumerate().for_each(|(ry, row)| {
+                // full size, no alpha (every camera and screen recording): one pixel at a time,
+                // straight along the rows, the same arithmetic as the general loop below
+                if n == 1 && alpha.is_none() && !general_only() {
+                    let lut = |v: f32| match decode {
+                        Some(t) => t.lookup(v),
+                        None => lin.get((v.clamp(0.0, 1.0) * 4095.0 + 0.5) as usize).copied().unwrap_or(0.0),
+                    };
+                    let whole = out.par_chunks_mut(stride * 4).enumerate().all(|(ry, row)| {
+                        let y = (r.y + ry).min(h - 1);
+                        let cy = y >> sy;
+                        let (Some(row), Some(yp), Some(up), Some(vp)) = (
+                            row.get_mut(x_off * 4..(x_off + r.w) * 4),
+                            planes[0].get(y * w + r.x..y * w + r.x + r.w),
+                            planes[1].get(cy * cw..cy * cw + cw),
+                            planes[2].get(cy * cw..cy * cw + cw),
+                        ) else {
+                            return false;
+                        };
+                        for (rx, (o, &py)) in row.chunks_exact_mut(4).zip(yp).enumerate() {
+                            let cx = (r.x + rx) >> sx;
+                            let (Some(&pu), Some(&pv)) = (up.get(cx), vp.get(cx)) else { return false };
+                            let yy = ytab[py as usize];
+                            let u = ctab[pu as usize];
+                            let v = ctab[pv as usize];
+                            // (the general loop's sum of one tap of weight 1, divided by 1)
+                            o[0] = (0.0 + lut(yy + cr_r * v) * 1.0) * inv;
+                            o[1] = (0.0 + lut(yy - cr_g * v - cb_g * u) * 1.0) * inv;
+                            o[2] = (0.0 + lut(yy + cb_b * u) * 1.0) * inv;
+                            o[3] = (0.0 + 1.0f32) * inv;
+                        }
+                        true
+                    });
+                    if whole {
+                        return;
+                    }
+                }
+                out.par_chunks_mut(stride * 4).enumerate().for_each(|(ry, row)| {
+                    let row = &mut row[x_off * 4..(x_off + r.w) * 4];
                     let oy = r.y + ry;
                     for rx in 0..r.w {
                         let ox = r.x + rx;
@@ -440,7 +514,8 @@ impl VideoFrame {
                 let cw = w.div_ceil(1 << sx);
                 let bits = *bits;
                 let amax = ((1u32 << bits) - 1) as f32;
-                out.par_chunks_mut(r.w * 4).enumerate().for_each(|(ry, row)| {
+                out.par_chunks_mut(stride * 4).enumerate().for_each(|(ry, row)| {
+                    let row = &mut row[x_off * 4..(x_off + r.w) * 4];
                     let oy = r.y + ry;
                     for rx in 0..r.w {
                         let ox = r.x + rx;
@@ -707,6 +782,100 @@ fn rotate_chroma<T: Copy + Default + Send + Sync>(planes: &[Arc<Vec<T>>; 3], chr
         return ([rotate_plane(&widen(&planes[1]), w, h, 1, q), rotate_plane(&widen(&planes[2]), w, h, 1, q)], Chroma::C444);
     }
     ([rotate_plane(&planes[1], cw, ch, 1, q), rotate_plane(&planes[2], cw, ch, 1, q)], chroma)
+}
+
+/// Tests compare the straight-line YUV conversion with the general loop it stands in for.
+#[cfg(test)]
+static GENERAL_ONLY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[inline]
+fn general_only() -> bool {
+    #[cfg(test)]
+    {
+        GENERAL_ONLY.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    #[cfg(not(test))]
+    {
+        false
+    }
+}
+
+#[cfg(test)]
+mod conversion_path_tests {
+    use super::*;
+
+    fn yuv(w: usize, h: usize, chroma: Chroma, color: ColorInfo) -> VideoFrame {
+        let (sx, sy) = chroma.shifts();
+        let (cw, ch) = (w.div_ceil(1 << sx), h.div_ceil(1 << sy));
+        let y: Vec<u8> = (0..w * h).map(|i| ((i * 37 + i / w * 11) % 256) as u8).collect();
+        let u: Vec<u8> = (0..cw * ch).map(|i| ((i * 53 + 7) % 256) as u8).collect();
+        let v: Vec<u8> = (0..cw * ch).map(|i| ((i * 29 + 101) % 256) as u8).collect();
+        VideoFrame {
+            width: w as u32,
+            height: h as u32,
+            data: PixelData::Yuv8 { planes: [Arc::new(y), Arc::new(u), Arc::new(v)], chroma, alpha: None },
+            color,
+            par: (1, 1),
+            pts: Tick::ZERO,
+        }
+    }
+
+    fn bits(v: &[f32]) -> Vec<u32> {
+        v.iter().map(|x| x.to_bits()).collect()
+    }
+
+    /// The straight-line path for full-size 8-bit YUV gives exactly the general loop's pixels.
+    #[test]
+    fn the_row_path_is_the_general_loop() {
+        let table = DecodeTable::new(0.0, 1.0, 1024, |v| v * v * 0.9 + 0.01);
+        for chroma in [Chroma::C420, Chroma::C422, Chroma::C444] {
+            for color in [ColorInfo::REC709, ColorInfo::SRGB_FULL] {
+                for (w, h) in [(33, 17), (64, 36), (1, 1)] {
+                    let f = yuv(w, h, chroma, color);
+                    for decode in [None, Some(&table)] {
+                        let fast = f.to_linear_f32_decimated_with(1, decode).2;
+                        let region = f.to_linear_f32_region(1, decode, Region { x: w / 3, y: h / 4, w: w / 2 + 1, h: h / 2 + 1 });
+                        GENERAL_ONLY.store(true, std::sync::atomic::Ordering::Relaxed);
+                        let general = f.to_linear_f32_decimated_with(1, decode).2;
+                        let general_region = f.to_linear_f32_region(1, decode, Region { x: w / 3, y: h / 4, w: w / 2 + 1, h: h / 2 + 1 });
+                        GENERAL_ONLY.store(false, std::sync::atomic::Ordering::Relaxed);
+                        assert_eq!(bits(&fast), bits(&general), "{chroma:?} {w}x{h}");
+                        assert_eq!(region.0, general_region.0);
+                        assert_eq!(bits(&region.1), bits(&general_region.1), "{chroma:?} {w}x{h} region");
+                    }
+                }
+            }
+        }
+    }
+
+    /// Converting only a rectangle gives the full conversion's pixels inside it and transparent
+    /// black everywhere else, whatever the rectangle (clipped, empty, outside).
+    #[test]
+    fn converting_within_a_rectangle() {
+        let f = yuv(40, 30, Chroma::C420, ColorInfo::REC709);
+        for n in [1, 2, 4] {
+            let (ow, oh, full) = f.to_linear_f32_decimated(n);
+            for keep in [
+                Region { x: 3, y: 2, w: 10, h: 7 },
+                Region { x: 0, y: 0, w: 40, h: 30 },
+                Region { x: 35, y: 25, w: 100, h: 100 },
+                Region { x: 50, y: 50, w: 5, h: 5 },
+                Region { x: 4, y: 4, w: 0, h: 3 },
+            ] {
+                let (w, h, px) = f.to_linear_f32_within_with(n, None, keep);
+                assert_eq!((w, h, px.len()), (ow, oh, ow * oh * 4));
+                let r = keep.clip(ow, oh);
+                for y in 0..oh {
+                    for x in 0..ow {
+                        let i = (y * ow + x) * 4;
+                        let inside = x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+                        let want: &[f32] = if inside { &full[i..i + 4] } else { &[0.0; 4] };
+                        assert_eq!(bits(&px[i..i + 4]), bits(want), "n {n} {keep:?} ({x}, {y})");
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
