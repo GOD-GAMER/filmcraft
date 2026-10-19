@@ -219,3 +219,19 @@ fn export_location_browse_works_with_the_runner_and_with_synchronous_pickers() {
     assert_eq!(d.app().ui.export.location, "/tmp/exports-b");
     assert!(!d.app().native_dialog_open());
 }
+
+#[test]
+fn drop_meme_at_playhead_asks_for_the_file_and_drops_it() {
+    let mut d = Driver::new(true);
+    assert_eq!(d.ok("ui.menu.invoke", json!({"id": "shorts.memeDrop"})), json!({"dialog": "open"}));
+    let (dialog, answer) = d.asked();
+    assert!(
+        matches!(&dialog, FileDialog::OpenFiles { exts } if ["png", "gif", "mp4", "wav"].iter().all(|x| exts.iter().any(|e| e == x))),
+        "pictures, GIFs, videos and sounds: {dialog:?}"
+    );
+    answer.send(vec![wav().to_string_lossy().into_owned()]).unwrap();
+    d.frames(2);
+    let q = d.app().session.active_sequence().unwrap().clone();
+    let t = q.audio_tracks.iter().find(|t| t.name == "Meme Sounds").expect("a track of meme sounds");
+    assert_eq!(t.items.len(), 1);
+}

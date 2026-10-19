@@ -104,7 +104,10 @@ fn caption_ys(s: &Session) -> Vec<f64> {
 fn every_shorts_command_is_in_the_shorts_menu() {
     for c in crate::commands::command_specs().iter().filter(|c| c.id.starts_with("shorts.")) {
         assert_eq!(c.menu.first().copied(), Some("Shorts"), "{}", c.id);
-        assert!(Session::default().execute(c.id, json!({})).is_err(), "{} needs a sequence", c.id);
+        // the meme folder can be filled before there is a sequence
+        if c.id != "shorts.memeFolder" {
+            assert!(Session::default().execute(c.id, json!({})).is_err(), "{} needs a sequence", c.id);
+        }
     }
     let menu = |id: &str| crate::commands::find(id).unwrap().menu.to_vec();
     assert_eq!(menu("shorts.format"), ["Shorts"]);
@@ -379,7 +382,7 @@ fn auto_edit_tries_versions_checks_them_and_keeps_the_best() {
     let (mut s, _) = stream(12.0, &[(6.0, -6.0)]);
     let stream_seq = s.state.active_sequence;
     let (undo, seqs) = (s.history.undo.len(), s.project.sequences().count());
-    let r = s.execute("shorts.autoEdit", json!({"platform": "tiktok"})).unwrap();
+    let r = s.execute("shorts.autoEdit", json!({"platform": "tiktok", "style": "formats"})).unwrap();
     assert_eq!(s.history.undo.len(), undo + 1, "one undo step");
     assert_eq!(s.project.sequences().count(), seqs + 1, "the trials leave nothing behind");
     for e in &s.events {
@@ -427,7 +430,169 @@ fn auto_edit_tries_versions_checks_them_and_keeps_the_best() {
         json!({"length": "forever"}),
         json!({"pick": {"format": "wavy"}}),
         json!({"title": "x".repeat(300)}),
+        json!({"style": "wavy"}),
+        json!({"memesFolder": 3}),
+        json!({"memesFolder": "x".repeat(5000)}),
     ] {
         assert!(s.execute("shorts.autoEdit", p.clone()).is_err(), "{p}");
     }
+}
+
+/// A folder of memes for the tests: a still picture named after a word, and `extra` files.
+fn meme_folder(name: &str, extra: &[(&str, &[u8])]) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("filmcraft-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let img = image::RgbaImage::from_pixel(64, 48, image::Rgba([250, 30, 200, 255]));
+    img.save(dir.join("actually.png")).unwrap();
+    for (f, b) in extra {
+        std::fs::write(dir.join(f), b).unwrap();
+    }
+    dir
+}
+
+#[test]
+fn reaction_split_halves_the_frame_switches_scenes_and_ends_in_black_and_white() {
+    let (mut s, _) = stream(24.0, &[(10.0, -6.0)]);
+    let memes = meme_folder("reaction", &[]);
+    let undo = s.history.undo.len();
+    let r = s.execute("shorts.youtube.reaction", json!({"memesFolder": memes.to_string_lossy()})).unwrap();
+    assert_eq!(s.history.undo.len(), undo + 1, "one undo step");
+    let q = seq(&s);
+    assert_eq!((q.settings.width, q.settings.height), (1080, 1920));
+    // the gameplay on the top half, the model filling the bottom half
+    let (pane, model) = crate::shorts_layout::current_rects(&s).unwrap();
+    assert!((pane[3] - 0.5).abs() < 0.01 && pane[1] < 0.01, "{pane:?}");
+    let model = model.unwrap();
+    assert!((model[1] - 0.5).abs() < 0.01 && model[3] > 0.99 && model[2] - model[0] > 0.99, "{model:?}");
+    // the scenes: contiguous from the start to the end, gameplay full screen somewhere, the last
+    // line on the face
+    let rx = &r["reaction"];
+    let scenes = rx["scenes"].as_array().unwrap();
+    assert_eq!(scenes[0]["start"], 0.0, "{rx}");
+    for w in scenes.windows(2) {
+        assert!((w[0]["end"].as_f64().unwrap() - w[1]["start"].as_f64().unwrap()).abs() < 1e-9, "{rx}");
+    }
+    assert!((scenes.last().unwrap()["end"].as_f64().unwrap() - q.duration().seconds()).abs() < 0.05, "{rx}");
+    assert_eq!(scenes.last().unwrap()["scene"], "face", "{rx}");
+    assert!(scenes.iter().any(|g| g["scene"] == "game"), "{rx}");
+    // where the gameplay fills the frame there is no model; the face covers the whole frame
+    let at = |k: &str| scenes.iter().find(|g| g["scene"] == k).map(|g| (g["start"].as_f64().unwrap() + g["end"].as_f64().unwrap()) / 2.0).unwrap();
+    let on = |track: &str, t: f64| {
+        q.video_tracks.iter().filter(|x| x.name == track).flat_map(|x| x.items.iter()).any(|i| i.start.seconds() <= t && i.end().seconds() > t)
+    };
+    assert!(!on("Model", at("game")) && on("Video 1", at("game")), "full-screen gameplay");
+    assert!(on("Model", at("face")), "full-screen face");
+    let face = render(&s, sec(at("face")));
+    let split = render(&s, sec(1.0));
+    let fw = q.settings.width as usize;
+    let row = |px: &[f32], y: usize| px[y * fw * 4..(y + 1) * fw * 4].to_vec();
+    let quarter = q.settings.height as usize / 4;
+    assert!(diff(&row(&face, quarter), &row(&split, quarter)) > 0.01, "the top half shows the face, not the gameplay");
+    let footage = |q: &Sequence| q.video_tracks.iter().find(|t| t.name == "Video 1").map(|t| t.items.iter().map(|i| i.duration.0).sum::<i64>()).unwrap();
+    let whole = footage(&q);
+    // bass hits on their own track, the black-and-white ending on the grade track, a meme
+    let hits = rx["hits"].as_u64().unwrap();
+    assert!(hits >= 1, "{rx}");
+    assert_eq!(q.audio_tracks.iter().filter(|t| t.name == "Bass Hits").map(|t| t.items.len() as u64).sum::<u64>(), hits);
+    assert!(q.video_tracks.iter().filter(|t| t.name == "Grade").flat_map(|t| t.items.iter()).any(|i| i.name == "Black-and-White Ending"), "{rx}");
+    assert!(rx["ending"].is_array(), "{rx}");
+    let drops = rx["memes"].as_array().unwrap();
+    assert_eq!(drops.first().map(|m| m["word"].as_str()), Some(Some("actually")), "{rx}");
+    assert!(q.video_tracks.iter().any(|t| t.name == "Memes" && !t.items.is_empty()));
+    // captions on the seam (under the face where it fills the frame), no progress bar or loop
+    let ys = caption_ys(&s);
+    assert!(ys.iter().filter(|y| (*y - 0.5).abs() < 0.03).count() > ys.len() / 2, "{ys:?}");
+    assert!(ys.iter().any(|y| *y > 0.7), "under the face: {ys:?}");
+    assert_eq!(s.state.shorts_captions.as_ref().unwrap()["style"], "reaction");
+    let names = track_names(&s);
+    assert_eq!(count(&names, "Progress Bar"), 0, "{names:?}");
+    assert!(!q.video_tracks.iter().flat_map(|t| t.items.iter()).any(crate::shorts_trim::is_loop_hold));
+    for t in [1.0, at("game"), at("face"), q.duration().seconds() - 0.1] {
+        render(&s, sec(t));
+    }
+    // applied again in place: the same short, nothing doubled, the footage whole
+    let r = s.execute("shorts.youtube.reaction", json!({"memesFolder": memes.to_string_lossy()})).unwrap();
+    let q = seq(&s);
+    assert_eq!(footage(&q), whole, "the footage is whole");
+    assert_eq!(r["reaction"]["hits"].as_u64(), Some(hits));
+    assert_eq!(q.audio_tracks.iter().filter(|t| t.name == "Bass Hits").map(|t| t.items.len() as u64).sum::<u64>(), hits, "hits not doubled");
+    let flashes = q.video_tracks.iter().flat_map(|t| t.items.iter()).filter(|i| i.name == "Punchline Flash").count();
+    assert_eq!(flashes, 1);
+    assert_eq!(q.video_tracks.iter().filter(|t| t.name == "Memes").count(), 1);
+    assert_eq!(count(&track_names(&s), "Grade"), 1);
+    // each part can be left out
+    let r = s.execute("shorts.youtube.reaction", json!({"scenes": false, "hits": false, "ending": false, "memes": false})).unwrap();
+    let rx = &r["reaction"];
+    assert_eq!(rx["scenes"].as_array().unwrap().len(), 1, "{rx}");
+    assert_eq!((rx["hits"].as_u64(), rx["ending"].is_null(), rx["memes"].as_array().map(Vec::len)), (Some(0), true, Some(0)), "{rx}");
+    let q = seq(&s);
+    assert!(!q.audio_tracks.iter().any(|t| t.name == "Bass Hits" && !t.items.is_empty()));
+    assert!(!q.video_tracks.iter().any(|t| (t.name == "Grade" || t.name == "Memes") && !t.items.is_empty()));
+    assert!(!q.video_tracks.iter().flat_map(|t| t.items.iter()).any(|i| i.name == "Punchline Flash"));
+    assert_eq!(footage(&q), whole);
+    // another format after it in place: none of the Reaction Split is left
+    s.execute("shorts.youtube.gameplay", json!({})).unwrap();
+    let q = seq(&s);
+    assert_eq!(footage(&q), whole);
+    assert!(!q.audio_tracks.iter().any(|t| t.name == "Bass Hits"));
+    let _ = std::fs::remove_dir_all(&memes);
+}
+
+#[test]
+fn auto_edit_makes_the_reaction_split_by_default() {
+    let (mut s, _) = stream(16.0, &[(6.0, -6.0)]);
+    let r = s.execute("shorts.autoEdit", json!({"platform": "youtube", "memes": false})).unwrap();
+    let picked = &r["versions"][r["picked"].as_u64().unwrap() as usize];
+    assert_eq!(picked["format"], "reaction", "{r}");
+    assert_eq!(r["options"]["style"], "reaction");
+    assert!(r["reaction"]["scenes"].is_array(), "{r}");
+    let steps: Vec<&str> = r["steps"].as_array().unwrap().iter().map(|x| x["id"].as_str().unwrap()).collect();
+    assert!(steps.contains(&"captions") && steps.contains(&"scenes") && steps.contains(&"ending"), "{steps:?}");
+    assert!(!steps.contains(&"loop"), "its own ending: {steps:?}");
+    assert_eq!(crate::shorts_auto::current(&s)["style"], "reaction");
+}
+
+#[test]
+fn meme_drops_and_bass_hits_from_the_menu() {
+    let (mut s, _) = stream(10.0, &[]);
+    // the meme folder: made when missing, its memes and the sound that replaces the bass hit
+    let dir = meme_folder("menu", &[]);
+    let fresh = dir.join("new");
+    let r = s.execute("shorts.memeFolder", json!({"folder": fresh.to_string_lossy()})).unwrap();
+    assert!(fresh.is_dir() && r["memes"].as_array().unwrap().is_empty() && r["hitSound"].is_null(), "{r}");
+    let r = Session::default().execute("shorts.memeFolder", json!({"folder": dir.to_string_lossy()})).unwrap();
+    assert_eq!(r["memes"][0]["words"][0], "actually", "{r}");
+    // dropped where its word is said, one undo step; the word's caption is purple
+    let undo = s.history.undo.len();
+    let r = s.execute("shorts.memeDrops", json!({"folder": dir.to_string_lossy()})).unwrap();
+    assert_eq!(s.history.undo.len(), undo + 1);
+    let t = r["drops"][0]["seconds"].as_f64().unwrap();
+    let words = crate::transcript::sequence_words(&s);
+    let w = words.iter().find(|w| w.text == "actually").unwrap();
+    assert!((w.start.seconds() - t).abs() < 0.1, "{r}");
+    let q = seq(&s);
+    let memes = q.video_tracks.iter().find(|t| t.name == "Memes").unwrap();
+    assert!(memes.items[0].start.seconds() <= w.start.seconds() && memes.items[0].end().seconds() > w.end.seconds());
+    render(&s, w.start + sec(0.1));
+    // one file at the playhead
+    let r = s.execute("shorts.memeDrop", json!({"path": dir.join("actually.png").to_string_lossy(), "time": sec(8.0).0})).unwrap();
+    assert!(r["seconds"].as_f64().unwrap() > 0.5, "{r}");
+    // the bass hit: built in, or the folder's own
+    let r = s.execute("shorts.bassHit", json!({"time": sec(2.0).0})).unwrap();
+    assert_eq!(r["hits"], 1, "{r}");
+    let q = seq(&s);
+    let hits = q.audio_tracks.iter().find(|t| t.name == "Bass Hits").unwrap();
+    assert_eq!(hits.items.len(), 1);
+    // hostile or missing files and folders
+    for (id, p) in [
+        ("shorts.memeDrop", json!({})),
+        ("shorts.memeDrop", json!({"path": dir.join("missing.png").to_string_lossy()})),
+        ("shorts.memeDrop", json!({"path": dir.join("notes.txt").to_string_lossy()})),
+        ("shorts.memeDrops", json!({"folder": dir.join("missing").to_string_lossy()})),
+        ("shorts.bassHit", json!({"time": sec(60.0).0})),
+    ] {
+        assert!(s.execute(id, p.clone()).is_err(), "{id} {p}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }

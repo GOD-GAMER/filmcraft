@@ -63,7 +63,7 @@ pub(crate) struct Frame {
 }
 
 impl Frame {
-    fn of(img: &Image) -> Option<Frame> {
+    pub(crate) fn of(img: &Image) -> Option<Frame> {
         if img.w < 8 || img.h < 8 || img.px.len() < img.w * img.h * 4 {
             return None;
         }
@@ -120,7 +120,7 @@ impl Frame {
     }
 
     /// Mean absolute luma difference from `o` over region `r`.
-    fn change(&self, o: &Frame, r: [f64; 4]) -> f64 {
+    pub(crate) fn change(&self, o: &Frame, r: [f64; 4]) -> f64 {
         if (self.w, self.h) != (o.w, o.h) {
             return 0.0;
         }
@@ -540,6 +540,10 @@ fn check(s: &Session, v: &Version, pf: &Platform, look: &Look, frames: &[Frame],
         Format::Spotlight => ("noModel", 0.0, "the spotlight needs a model"),
         Format::Gameplay | Format::Countdown => ("gameplay", 6.0 + 4.0 * look.motion, "game action suits big gameplay"),
         Format::FullFrame | Format::Meme => ("full", 5.0 + 3.0 * look.motion, "the whole picture, for clips where everything matters"),
+        Format::Reaction if look.model.is_some() => {
+            ("reaction", (6.0 + 2.5 * look.talk + 2.0 * look.motion).min(10.0), "a streamer talking over the game suits the reaction split")
+        }
+        Format::Reaction => ("splitNoModel", 2.0, "the reaction split needs a model"),
     };
     out.push(Check {
         id: "fitsClip",
@@ -647,7 +651,7 @@ pub fn current(s: &Session) -> Value {
         return o.clone();
     }
     let platform = s.state.shorts_format.as_ref().and_then(|f| f.get("platform")).and_then(Value::as_str).unwrap_or("youtube");
-    json!({"platform": platform, "length": "auto", "title": "", "tryFormats": true, "captions": true, "hype": true, "finish": true})
+    json!({"platform": platform, "style": "reaction", "length": "auto", "title": "", "tryFormats": true, "captions": true, "hype": true, "finish": true, "memes": true, "memesFolder": ""})
 }
 
 pub(crate) fn auto_edit(s: &mut Session, p: &Value) -> Result<Value> {
@@ -657,6 +661,19 @@ pub(crate) fn auto_edit(s: &mut Session, p: &Value) -> Result<Value> {
         None => fm::YOUTUBE,
     };
     let try_formats = bool_p(p, "tryFormats").unwrap_or(true);
+    // Reaction Split (the default), or the best of the other formats
+    let reaction = match str_p(p, "style") {
+        None | Some("reaction") => true,
+        Some("formats") => false,
+        Some(o) => return Err(bad(CMD, format!("`style` must be reaction or formats, not `{o}`"))),
+    };
+    let memes = bool_p(p, "memes").unwrap_or(true);
+    let memes_folder = match p.get("memesFolder") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(f)) if f.trim().is_empty() => None,
+        Some(Value::String(f)) if f.chars().count() <= 4096 => Some(f.trim().to_string()),
+        Some(_) => return Err(bad(CMD, "`memesFolder` must be a folder path")),
+    };
     let want_captions = bool_p(p, "captions").unwrap_or(true);
     let hype = bool_p(p, "hype").unwrap_or(true);
     let finish = bool_p(p, "finish").unwrap_or(true);
@@ -688,6 +705,9 @@ pub(crate) fn auto_edit(s: &mut Session, p: &Value) -> Result<Value> {
         formats.push(Format::Spotlight);
         formats.push(Format::FullFrame);
     }
+    if reaction {
+        formats = vec![Format::Reaction];
+    }
     let crops: Vec<bool> = if look.burned.is_some() { vec![false, true] } else { vec![false] };
     for f in &formats {
         for side in &sides {
@@ -708,13 +728,24 @@ pub(crate) fn auto_edit(s: &mut Session, p: &Value) -> Result<Value> {
             "format": v.format.id(),
             "side": side_name(v.side),
             "captions": captions,
-            "hook": want_captions && v.format != Format::FullFrame,
-            "progressBar": full,
+            "hook": want_captions && !matches!(v.format, Format::FullFrame | Format::Reaction),
+            "progressBar": full && v.format != Format::Reaction,
             "seconds": if full { seconds } else { 0.0 },
-            "loop": full && finish,
+            "loop": full && finish && v.format != Format::Reaction,
             "bleep": full && finish,
             "hype": full && hype,
         });
+        if v.format == Format::Reaction {
+            // the trials check the layout and captions; the scenes, hits, memes and ending come
+            // with the real one
+            q["scenes"] = json!(full);
+            q["hits"] = json!(full && hype);
+            q["ending"] = json!(full && finish);
+            q["memes"] = json!(full && memes);
+            if let Some(f) = &memes_folder {
+                q["memesFolder"] = json!(f);
+            }
+        }
         if let Some(t) = &title {
             q["title"] = json!(t);
         }
@@ -777,7 +808,23 @@ pub(crate) fn auto_edit(s: &mut Session, p: &Value) -> Result<Value> {
     if captions {
         steps.push(json!({"id": "captions"}));
     }
-    if finish {
+    let made_reaction = s.state.shorts_reaction.clone().filter(|_| chosen.format == Format::Reaction);
+    if let Some(r) = &made_reaction {
+        let scenes = r["scenes"].as_array().cloned().unwrap_or_default();
+        let count = |k: &str| scenes.iter().filter(|g| g["scene"] == k).count();
+        if count("game") + count("face") > 0 {
+            steps.push(json!({"id": "scenes", "game": count("game"), "face": count("face")}));
+        }
+        if let Some(n) = r["hits"].as_u64().filter(|n| *n > 0) {
+            steps.push(json!({"id": "hits", "count": n}));
+        }
+        if let Some(m) = r["memes"].as_array().filter(|m| !m.is_empty()) {
+            steps.push(json!({"id": "memes", "count": m.len()}));
+        }
+        if !r["ending"].is_null() {
+            steps.push(json!({"id": "ending"}));
+        }
+    } else if finish {
         steps.push(json!({"id": "loop"}));
     }
     let report = json!({
@@ -804,11 +851,15 @@ pub(crate) fn auto_edit(s: &mut Session, p: &Value) -> Result<Value> {
             "platform": pf.id,
             "length": p.get("length").cloned().unwrap_or(json!("auto")),
             "title": title.clone().unwrap_or_default(),
+            "style": if reaction { "reaction" } else { "formats" },
             "tryFormats": try_formats,
             "captions": want_captions,
             "hype": hype,
             "finish": finish,
+            "memes": memes,
+            "memesFolder": memes_folder.clone().unwrap_or_default(),
         },
+        "reaction": made_reaction.unwrap_or(Value::Null),
         "seconds": len,
         "warnings": pf.warnings(len),
         "sequence": made.get("sequence").cloned().unwrap_or(Value::Null),

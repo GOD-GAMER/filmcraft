@@ -42,6 +42,7 @@ const AUTOMATIC: &[&str] = &["Shorts", "Automatic Effects"];
 const GRAPHICS: &[&str] = &["Shorts", "Graphics"];
 const CAPTION_STYLES: &[&str] = &["Shorts", "Caption Styles"];
 const SOUND: &[&str] = &["Shorts", "Sound"];
+const MEMES: &[&str] = &["Shorts", "Meme Drops"];
 
 fn spec(id: &'static str, label: &'static str, params: &'static str, run: Run) -> CommandSpec {
     spec_in(MENU, id, label, params, run)
@@ -53,16 +54,17 @@ fn spec_in(menu: &'static [&'static str], id: &'static str, label: &'static str,
 
 const VERTICAL: &str = r#"{"width":u32=1080,"height":u32=1920,"name":str?}"#;
 const LAYOUT: &str = r##"{"clips":[id]?,"preset":"stack|split|pip|spotlight|full","side":"right|left","game":[x0,y0,x1,y1]?,"gameWidth":f?,"gameSize":f?,"gamePan":f?,"gameY":f?,"model":[x0,y0,x1,y1]?,"modelWidth":f?,"modelHeight":f?,"modelX":f?,"modelY":f?,"corner":px?,"gameCorner":px?,"border":px?,"borderColor":"#ffffff"?,"showModel":bool?,"background":"blur|black","split":f?,"live":bool?}"##;
-const AUTO: &str = r#"{"platform":"youtube|tiktok","length":"auto|keep"|seconds="auto","title":str?,"tryFormats":bool=true,"captions":bool=true,"hype":bool=true,"finish":bool=true,"pick":{"format":str,"side":"right|left","crop":bool}?}"#;
-const FORMAT: &str = r#"{"platform":"youtube|tiktok","format":"gameplay|fullFrame|meme|spotlight|countdown","title":str?,"side":"right|left"?,"hook":bool?,"captions":bool?,"captionStyle":"auto|pop|karaoke|box|oneWord|plain"?,"progressBar":bool=true,"seconds":f=0,"loop":bool=false,"loopSeconds":f=0.5,"moments":n=3,"momentSeconds":f=8,"background":"blur|black"?,"game":[x0,y0,x1,y1]?,"bleep":bool=false,"hype":bool=false}"#;
-const CAPTIONS: &str = r##"{"style":"pop|karaoke|box|oneWord|plain"?,"maxWords":n=3,"maxChars":n?,"lines":n=1,"font":"Inter"?,"fontStyle":"Bold"?,"size":px?,"uppercase":bool=true,"punctuation":bool=false,"color":"#ffffff"?,"highlight":"#ffd60a"?,"highlightText":"#ffffff"?,"grow":percent?,"outline":percent?,"outlineColor":"#000000"?,"shadow":n?,"background":bool?,"backgroundColor":"#000000"?,"backgroundOpacity":n?,"radius":percent?,"x":f?,"y":f?,"width":f?,"animation":"pop|bounce|fade|slide|none"?,"hold":seconds=0.25,"speakerColors":bool=false,"fixes":"wrong=right, …"?,"replace":bool=true,"live":bool?}"##;
+const AUTO: &str = r#"{"platform":"youtube|tiktok","style":"reaction|formats"="reaction","length":"auto|keep"|seconds="auto","title":str?,"tryFormats":bool=true,"memes":bool=true,"memesFolder":str?,"captions":bool=true,"hype":bool=true,"finish":bool=true,"pick":{"format":str,"side":"right|left","crop":bool}?}"#;
+const FORMAT: &str = r#"{"platform":"youtube|tiktok","format":"reaction|gameplay|fullFrame|meme|spotlight|countdown","title":str?,"side":"right|left"?,"hook":bool?,"captions":bool?,"captionStyle":"auto|pop|karaoke|box|oneWord|plain|reaction"?,"progressBar":bool?,"seconds":f=0,"loop":bool=false,"loopSeconds":f=0.5,"moments":n=3,"momentSeconds":f=8,"background":"blur|black"?,"game":[x0,y0,x1,y1]?,"bleep":bool?,"hype":bool?,"scenes":bool=true,"hits":bool=true,"ending":bool=true,"memes":bool=true,"memesFolder":str?}"#;
+const CAPTIONS: &str = r##"{"style":"pop|karaoke|box|oneWord|plain|reaction"?,"maxWords":n=3,"maxChars":n?,"lines":n=1,"font":"Inter"?,"fontStyle":"Bold"?,"size":px?,"uppercase":bool=true,"punctuation":bool=false,"color":"#ffffff"?,"highlight":"#ffd60a"?,"highlightText":"#ffffff"?,"grow":percent?,"outline":percent?,"outlineColor":"#000000"?,"shadow":n?,"background":bool?,"backgroundColor":"#000000"?,"backgroundOpacity":n?,"radius":percent?,"x":f?,"y":f?,"width":f?,"animation":"pop|bounce|fade|slide|none"?,"hold":seconds=0.25,"speakerColors":bool=false,"fixes":"wrong=right, …"?,"shout":bool?,"censor":"stars|vowel"?,"wordColors":"word=#rrggbb, …"?,"replace":bool=true,"live":bool?}"##;
 
 pub(crate) fn commands() -> Vec<CommandSpec> {
     use crate::shorts_captions as cap;
     use crate::shorts_formats::{self as fm, Format};
     use crate::shorts_fx as fx;
     use crate::shorts_layout as ly;
-    const WORDS: &str = r#"{"words":"bonk, what"|[str],"effect":"punch|shake|glitch|flash"|[..]}"#;
+    const WORDS: &str =
+        r#"{"words":"bonk, what"|[str],"effect":"punch|shake|glitch|flash"|[..],"shout":bool?,"censor":"stars|vowel"?,"wordColors":"huh=#7a5cfa"?}"#;
     macro_rules! format_spec {
         ($menu:expr, $id:literal, $label:literal, $pf:expr, $f:expr) => {
             spec_in($menu, $id, $label, FORMAT, |s, p| fm::format(s, p, Some(($pf, $f)), $id))
@@ -71,11 +73,13 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
     vec![
         spec("shorts.autoEdit", "Auto Edit…", AUTO, crate::shorts_auto::auto_edit),
         spec("shorts.format", "Formats…", FORMAT, |s, p| fm::format(s, p, None, "shorts.format")),
+        format_spec!(YOUTUBE_MENU, "shorts.youtube.reaction", "Reaction Split", fm::YOUTUBE, Format::Reaction),
         format_spec!(YOUTUBE_MENU, "shorts.youtube.gameplay", "Gameplay + Model", fm::YOUTUBE, Format::Gameplay),
         format_spec!(YOUTUBE_MENU, "shorts.youtube.fullFrame", "Full Frame + Blur", fm::YOUTUBE, Format::FullFrame),
         format_spec!(YOUTUBE_MENU, "shorts.youtube.meme", "Meme Caption Bar", fm::YOUTUBE, Format::Meme),
         format_spec!(YOUTUBE_MENU, "shorts.youtube.spotlight", "Model Spotlight", fm::YOUTUBE, Format::Spotlight),
         format_spec!(YOUTUBE_MENU, "shorts.youtube.countdown", "Top Moments Countdown", fm::YOUTUBE, Format::Countdown),
+        format_spec!(TIKTOK_MENU, "shorts.tiktok.reaction", "Reaction Split", fm::TIKTOK, Format::Reaction),
         format_spec!(TIKTOK_MENU, "shorts.tiktok.gameplay", "Gameplay + Model", fm::TIKTOK, Format::Gameplay),
         format_spec!(TIKTOK_MENU, "shorts.tiktok.fullFrame", "Full Frame + Blur", fm::TIKTOK, Format::FullFrame),
         format_spec!(TIKTOK_MENU, "shorts.tiktok.meme", "Meme Caption Bar", fm::TIKTOK, Format::Meme),
@@ -170,6 +174,14 @@ pub(crate) fn commands() -> Vec<CommandSpec> {
         ),
         spec_in(SOUND, "shorts.duckMusic", "Duck Music Under Speech", r#"{"clips":[id]?,"reduceDb":f=-15}"#, fx::duck_music),
         spec_in(SOUND, "shorts.soundEffect", "Sound Effect at Playhead", r#"{"item":itemId?,"time":ticks?}"#, fx::sound_effect),
+        spec_in(SOUND, "shorts.bassHit", "Bass Hit at Playhead", r#"{"time":ticks?,"folder":str?}"#, bass_hit),
+        spec_in(MEMES, "shorts.memeDrops", "Drop Memes on Their Words", r#"{"folder":str?}"#, crate::shorts_memes::drop_memes),
+        spec_in(MEMES, "shorts.memeDrop", "Drop Meme at Playhead…", r#"{"path":str,"time":ticks?}"#, crate::shorts_memes::drop_meme),
+        // the folder can be filled before any sequence exists
+        CommandSpec {
+            enabled: crate::commands::always,
+            ..spec_in(MEMES, "shorts.memeFolder", "Open Meme Folder", r#"{"folder":str?,"create":bool=true}"#, crate::shorts_memes::meme_folder)
+        },
     ]
 }
 
@@ -738,6 +750,18 @@ pub(crate) fn place_graphic_track(s: &mut Session, label: &str, track: &str, cli
         st.selection.clear();
         Ok(q.video_tracks.len().saturating_sub(1))
     })
+}
+
+/// Sound ▸ Bass Hit at Playhead: the built-in bass hit (or the meme folder's `boom` sound).
+fn bass_hit(s: &mut Session, p: &Value) -> Result<Value> {
+    let t = at_time(s, p).unwrap_or_else(|| s.playhead());
+    let folder = crate::shorts_memes::folder_p(p);
+    let sound = folder.as_deref().and_then(crate::shorts_memes::hit_sound);
+    let n = s.edit_group("Bass Hit at Playhead", |s| crate::shorts_reaction::add_hits(s, &[t.seconds()], sound.as_deref()))?;
+    if n == 0 {
+        return Err(bad("shorts.bassHit", "move the playhead inside the sequence"));
+    }
+    Ok(json!({"hits": n, "sound": sound.map(|p| p.to_string_lossy().to_string())}))
 }
 
 fn flash(s: &mut Session, p: &Value) -> Result<Value> {

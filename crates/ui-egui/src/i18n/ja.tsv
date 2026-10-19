@@ -3795,3 +3795,27 @@
 	Faster	高速
 	Balanced	バランス
 	Better Quality	高画質
+	Reaction Split	リアクション分割
+	Bass Hit at Playhead	再生ヘッドの位置に低音ヒット
+	Meme Drops	ミーム挿入
+	Drop Memes on Their Words	言葉に合わせてミームを挿入
+	Drop Meme at Playhead…	再生ヘッドの位置にミームを挿入…
+	Open Meme Folder	ミームフォルダーを開く
+	A streamer talking over the game suits the reaction split.	ゲーム中に話す配信者にはリアクション分割が合います。
+	Bass hits and flashes	低音ヒットとフラッシュ
+	Bass hits: {n}	低音ヒット: {n}
+	Best of the other formats	ほかのフォーマットから最適なもの
+	Black-and-white ending	白黒のエンディング
+	Bleep swears	悪態をピー音で消す
+	Full-screen gameplay and face moments	ゲーム画面と顔の全画面の場面
+	Full-screen moments: {n}	全画面の場面: {n}
+	Gameplay and your model split in half, captions on the seam, full-screen moments, bass hits, memes and a black-and-white ending.	ゲーム画面とモデルを上下に半分ずつ、境目にキャプション、全画面の場面、低音ヒット、ミーム、白黒のエンディング。
+	Meme drops from your meme folder	ミームフォルダーからミームを挿入
+	Meme folder:	ミームフォルダー:
+	Memes: {n}	ミーム: {n}
+	Name each file after the word that drops it (huh.mp4, bruh.png, oh no.gif). A boom.wav there replaces the bass hit.	各ファイルには、それを挿入する言葉の名前を付けます (huh.mp4、bruh.png、oh no.gif)。boom.wav を置くと低音ヒットの代わりに使われます。
+	Punch-ins, bass hits and flashes on loud moments	大きな声の場面でパンチイン、低音ヒット、フラッシュ
+	Reaction	リアクション
+	The reaction split needs a model.	リアクション分割にはモデルが必要です。
+	Tries Gameplay + Model, Model Spotlight and Full Frame + Blur and keeps the one that scores best.	ゲーム画面 + モデル、モデル主役、全画面 + ぼかしを試し、最も点数の高いものを残します。
+	Trim, bleep swears and black-and-white ending	トリミング、悪態のピー音、白黒のエンディング

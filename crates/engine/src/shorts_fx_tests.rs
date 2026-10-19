@@ -589,3 +589,97 @@ fn track_model_keyframes_the_pane_inside_the_picture() {
     s.state.playheads.insert(seq_id, Tick(i64::MAX / 4));
     assert!(s.execute("shorts.trackModel", json!({})).is_err());
 }
+
+/// A mono 16 kHz WAV of a 220 Hz voice `secs` long, quiet (-30 dBFS) except loud (-6 dBFS) from
+/// `loud.0` to `loud.1` seconds.
+fn voice_wav(name: &str, secs: f64, loud: (f64, f64)) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!("filmcraft-{name}-{}.wav", std::process::id()));
+    let rate = 16_000u32;
+    let n = (secs * f64::from(rate)) as u32;
+    let mut b = Vec::new();
+    b.extend_from_slice(b"RIFF");
+    b.extend_from_slice(&(36 + n * 2).to_le_bytes());
+    b.extend_from_slice(b"WAVEfmt ");
+    b.extend_from_slice(&16u32.to_le_bytes());
+    b.extend_from_slice(&1u16.to_le_bytes());
+    b.extend_from_slice(&1u16.to_le_bytes());
+    b.extend_from_slice(&rate.to_le_bytes());
+    b.extend_from_slice(&(rate * 2).to_le_bytes());
+    b.extend_from_slice(&2u16.to_le_bytes());
+    b.extend_from_slice(&16u16.to_le_bytes());
+    b.extend_from_slice(b"data");
+    b.extend_from_slice(&(n * 2).to_le_bytes());
+    for i in 0..n {
+        let t = f64::from(i) / f64::from(rate);
+        let amp = if t >= loud.0 && t < loud.1 { 0.5 } else { 0.03 };
+        b.extend_from_slice(&(((t * 220.0 * std::f64::consts::TAU).sin() * amp * 32767.0) as i16).to_le_bytes());
+    }
+    std::fs::write(&path, b).unwrap();
+    path
+}
+
+#[test]
+fn reaction_captions_shout_in_capitals_star_one_vowel_and_colour_meme_words() {
+    let mut s = Session::default();
+    s.execute("file.newSequence", json!({"name": "Talk", "width": 1080, "height": 1920, "fps": 30.0})).unwrap();
+    let path = voice_wav("shout", 4.5, (2.0, 3.0));
+    let r = s.execute("file.import", json!({"paths": [path.to_string_lossy()]})).unwrap();
+    let item = r["items"][0].as_u64().unwrap();
+    s.execute("timeline.place", json!({"item": item, "track": "A1", "seconds": 0.0})).unwrap();
+    let mut t = Transcript { language: "en".into(), ..Default::default() };
+    for (text, a, b) in [
+        ("this", 0.2, 0.4),
+        ("is", 0.45, 0.6),
+        ("so", 0.65, 0.8),
+        ("fun.", 0.85, 1.2),
+        ("what", 2.05, 2.25),
+        ("the", 2.3, 2.4),
+        ("fuck", 2.45, 2.7),
+        ("bro!", 2.75, 2.95),
+        ("okay", 3.4, 3.6),
+        ("bonk", 3.65, 3.9),
+    ] {
+        t.words.push(Word::new(text, sec(a), sec(b)));
+    }
+    t.normalize();
+    s.transcriber = Some(Arc::new(FixedTranscriber { transcript: t, id: "fixed".into() }));
+    s.execute("transcript.generate", json!({"items": [item]})).unwrap();
+    s.execute("shorts.bleep", json!({})).unwrap();
+    let r = s.execute("shorts.captions", json!({"style": "reaction", "wordColors": "bonk=#7a5cfa"})).unwrap();
+    let texts = caption_texts(&s, &r);
+    // shouted in capitals, the swear starred on its vowel, the rest as said
+    assert!(texts.iter().any(|t| t.contains("F*CK")), "{texts:?}");
+    assert!(texts.iter().any(|t| t.contains("this")), "{texts:?}");
+    assert!(!texts.iter().any(|t| t.to_lowercase().contains("fuck") || t.contains("THIS")), "{texts:?}");
+    // the meme word's phrase in the meme colour, the others cream
+    let q = seq(&s);
+    let items = &q.video_tracks[r["track"].as_u64().unwrap() as usize].items;
+    let fill = |i: &TrackItem| match i.effects.last().unwrap().param("fill_color").unwrap().value {
+        ParamValue::Color(c) => c,
+        ref v => panic!("{v:?}"),
+    };
+    let text = |i: &TrackItem| match &i.effects.last().unwrap().param("text").unwrap().value {
+        ParamValue::Text(t) => t.clone(),
+        v => panic!("{v:?}"),
+    };
+    let bonk = items.iter().find(|i| text(i).contains("bonk")).unwrap();
+    let c = fill(bonk);
+    assert!(c[2] > 0.9 && c[1] < 0.5, "purple: {c:?}");
+    let first = items.iter().find(|i| text(i).contains("this")).unwrap();
+    let c = fill(first);
+    assert!(c[0] > 0.9 && c[1] > 0.9 && c[2] > 0.8, "cream: {c:?}");
+    assert_eq!(s.state.shorts_captions.as_ref().unwrap()["censor"], "vowel");
+    // stars instead, and no shouting
+    let r = s.execute("shorts.captions", json!({"style": "reaction", "censor": "stars", "shout": false})).unwrap();
+    let texts = caption_texts(&s, &r);
+    assert!(texts.iter().any(|t| t.contains("***")) && !texts.iter().any(|t| t.contains("F*CK") || t.contains("WHAT")), "{texts:?}");
+    for p in [
+        json!({"style": "reaction", "censor": "hearts"}),
+        json!({"style": "reaction", "wordColors": 3}),
+        json!({"style": "reaction", "wordColors": "bonk"}),
+        json!({"style": "reaction", "wordColors": "bonk=nope"}),
+    ] {
+        assert!(s.execute("shorts.captions", p.clone()).is_err(), "{p}");
+    }
+    let _ = std::fs::remove_file(&path);
+}

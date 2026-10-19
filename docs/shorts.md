@@ -8,16 +8,16 @@ over MCP or the control channel (`shorts.*`, parameters below).
 The menu: **Auto Edit…**, **Formats…**, **YouTube Shorts ▸** and **TikTok ▸** (each format in one click),
 **Layout…**, **Word Captions…**, **Auto-Trim to Length…**, **Loop Ending**, **Safe Zones ▸**,
 **Export for YouTube Shorts…**, **Export for TikTok…**, then the single tools grouped in
-**Reframe**, **Effects at Playhead**, **Automatic Effects**, **Graphics**, **Caption Styles** and
-**Sound**.
+**Reframe**, **Effects at Playhead**, **Automatic Effects**, **Graphics**, **Caption Styles**,
+**Sound** and **Meme Drops**.
 
 A typical clip:
 
 1. Cut the moment from the VOD on a normal 16:9 sequence.
 2. **Sequence ▸ Transcript ▸ Transcribe…** (once per clip; it finds every word and when it is
    said). Optionally remove filler words and pauses from the Transcript menu.
-3. **Shorts ▸ Auto Edit…** (pick the platform; it tries the formats, checks each and keeps the
-   best), or **Shorts ▸ Formats…** to choose yourself. The Program monitor shows the short (a
+3. **Shorts ▸ Auto Edit…** (pick the platform; it makes the Reaction Split, or tries the other
+   formats, checks each and keeps the best), or **Shorts ▸ Formats…** to choose yourself. The Program monitor shows the short (a
    1080 x 1920 copy of the sequence; the 16:9 original is left as it was) with the platform's
    safe zones over it.
 4. Fine-tune with **Layout…** and **Word Captions…**, add effects (**Find Hype Moments**,
@@ -29,8 +29,12 @@ A typical clip:
 
 **Auto Edit…** makes the short on its own and checks its own work. Pick the platform (YouTube
 Shorts or TikTok), the length (Automatic: under a minute on YouTube Shorts, a minute on TikTok;
-or keep it, or 15, 30 or 60 seconds), an optional hook title, and which steps it may take; then
-**Auto Edit**. It:
+or keep it, or 15, 30 or 60 seconds), the style, and which steps it may take; then **Auto Edit**.
+
+The style is the **Reaction Split** (the default; see [Reaction Split](#reaction-split)) or
+**Best of the other formats**. For the Reaction Split it makes that format with its scene
+switches, bass hits, memes (from your meme folder, which **Open Meme Folder** shows) and
+black-and-white ending, checked like the others. For the other formats it:
 
 1. **Looks at the clip:** frames sampled across the recording (at keyframes, which decode
    quickest) show which bottom corner the model is in (the corner whose colours stay the same
@@ -56,7 +60,7 @@ move its box in **Layout…** afterwards.
 
 | Command | Parameters |
 |---|---|
-| `shorts.autoEdit` | `{"platform": "youtube\|tiktok", "length": "auto\|keep" or seconds, "title": "…", "tryFormats": true, "captions": true, "hype": true, "finish": true (trim, bleep, loop), "pick": {"format", "side", "crop"} (make that version)}`; the result is the report: `look` (what it found), `versions` (each with `score` and `checks`), `picked`, `steps`, `seconds`, `warnings`. |
+| `shorts.autoEdit` | `{"platform": "youtube\|tiktok", "style": "reaction\|formats" (reaction), "length": "auto\|keep" or seconds, "title": "…", "tryFormats": true, "captions": true, "hype": true (punch-ins; bass hits and flashes in the Reaction Split), "finish": true (trim, bleep, loop or the black-and-white ending), "memes": true, "memesFolder": "…" (else the default meme folder), "pick": {"format", "side", "crop"} (make that version)}`; the result is the report: `look` (what it found), `versions` (each with `score` and `checks`), `picked`, `steps`, `reaction` (what the Reaction Split made), `seconds`, `warnings`. |
 
 ## Formats
 
@@ -68,6 +72,7 @@ it and goes on to Export mode with the platform's preset. **Shorts ▸ YouTube S
 
 | Format | What it makes |
 |---|---|
+| Reaction Split | The gameplay on the top half and the model filling the bottom half, captions on the seam, full-screen moments, bass hits, memes and a black-and-white ending ([below](#reaction-split)). |
 | Gameplay + Model | The stacked layout (all of the gameplay, the model in its own box below), a hook title over the gameplay for the first 2.5 s, word captions on the gameplay's bottom edge. |
 | Full Frame + Blur | The whole recording across the frame (nothing cut off) over a blurred copy, a title above it for the whole short, captions below it. |
 | Meme Caption Bar | A white bar of big black text right above the whole recording, on black (no captions unless turned on). |
@@ -88,10 +93,55 @@ bars, progress bar, loop ending) is replaced.
 
 | Command | Parameters |
 |---|---|
-| `shorts.format`, `shorts.youtube.<format>`, `shorts.tiktok.<format>` (`gameplay`, `fullFrame`, `meme`, `spotlight`, `countdown`) | `{"platform": "youtube\|tiktok", "format": "…", "title": "…", "side": "right\|left", "hook": bool, "captions": bool, "captionStyle": "auto\|pop\|karaoke\|box\|oneWord\|plain", "progressBar": true, "seconds": 0 (or 3–600), "loop": false, "loopSeconds": 0.5, "moments": 3, "momentSeconds": 8, "background": "blur\|black", "game": [x0, y0, x1, y1] (the gameplay part of the recording), "bleep": false, "hype": false}` |
+| `shorts.format`, `shorts.youtube.<format>`, `shorts.tiktok.<format>` (`reaction`, `gameplay`, `fullFrame`, `meme`, `spotlight`, `countdown`) | `{"platform": "youtube\|tiktok", "format": "…", "title": "…", "side": "right\|left", "hook": bool, "captions": bool, "captionStyle": "auto\|pop\|karaoke\|box\|oneWord\|plain\|reaction", "progressBar": true (false in the Reaction Split), "seconds": 0 (or 3–600), "loop": false, "loopSeconds": 0.5, "moments": 3, "momentSeconds": 8, "background": "blur\|black", "game": [x0, y0, x1, y1] (the gameplay part of the recording), "bleep": false, "hype": false (both true in the Reaction Split); Reaction Split only: "scenes": true, "hits": true, "ending": true, "memes": true, "memesFolder": "…"}` |
 
 The result lists the short's length, `warnings` about it (too long, or over a minute on YouTube
 Shorts) and the export preset to use.
+
+## Reaction Split
+
+The look of streamers' reaction clips, cut from what the transcript says (when each word is
+said and how loud) and how much the game moves:
+
+- **Split screen:** the gameplay zoomed in to fill the top half, the model's head and shoulders
+  filling the bottom half, nothing behind them.
+- **Captions on the seam** (the Reaction caption style): two or three words at a time as they are
+  said, cream with a thick dark outline, in capitals when shouted, swears starred with one vowel
+  (`f*ck`) and bleeped.
+- **Scene switches:** the gameplay full screen, with a slow push-in, where the streamer goes
+  quiet or reacts ("huh?", "wait", "no") while the game moves (about one every 10 seconds,
+  1.6 to 3 seconds each, back to the split where a sentence starts); the model's face full
+  screen for the last line, the punchline, with the captions below it.
+- **Hits:** a bass hit (synthesised: no sound files are bundled) on every switch into a
+  full-screen scene and where shouting starts, a white flash before the punchline, the first
+  full-screen gameplay fading to grey, and the short ending in black and white, shrinking into
+  black.
+- **Meme drops** from your meme folder (below), with the word's caption in purple.
+- Punch-ins on the loud moments. No progress bar or loop ending: the ending is its own.
+
+Each part can be turned off in Formats… (full-screen moments, bass hits and flashes,
+black-and-white ending, bleeps, meme drops).
+
+## Meme Drops
+
+FilmCraft ships no memes (they belong to other people): keep yours in a folder and they drop in
+when their word is said. **Shorts ▸ Meme Drops ▸ Open Meme Folder** shows the folder
+(`<FilmCraft data folder>/Memes`, made when missing; on Windows `%APPDATA%\FilmCraft\Memes`).
+Name each file after the word that drops it: `huh.mp4` on "huh", `what the hell.png` on "what
+the hell", `bruh, bro.gif` on either (a comma or semicolon separates alternatives; dashes and
+underscores count as spaces). Pictures, GIFs, videos and sounds work. A sound named `boom` (or
+`bass hit`, `hit`) replaces the built-in bass hit and is never dropped on a word.
+
+A picture, GIF or video shows over the middle of the short for as long as it lasts (at most
+2.4 s; a still picture 1.3 s), faded in and out, with its sound, on a **Memes** track; a sound
+plays on **Meme Sounds**. Drops are at least 4 seconds apart, at most one per 5 seconds of short,
+each meme drops once, and none in the ending.
+
+| Menu item | Command and parameters |
+|---|---|
+| Drop Memes on Their Words | `shorts.memeDrops` `{"folder": "…"?}`: the drops (`word`, `file`, `seconds`). |
+| Drop Meme at Playhead… | `shorts.memeDrop` `{"path": "…", "time": ticks?}`: one file (the menu asks for it). |
+| Open Meme Folder | `shorts.memeFolder` `{"folder": "…"?, "create": true}`: the folder, its memes and their words, and the sound that replaces the bass hit. |
 
 ## Safe zones and exporting
 
@@ -250,6 +300,7 @@ away with its defaults.
 | Highlight box | A coloured box sits behind the word being spoken. |
 | One word | One big word at a time, each bouncing in. |
 | Plain | Phrases only, no highlight. |
+| Reaction | Two or three words at a time, cream with a thick dark outline, in capitals when shouted, swears starred with one vowel (`f*ck`). |
 
 Options:
 
@@ -275,7 +326,9 @@ Command: `shorts.captions` (and `shorts.captionsPop`, `shorts.captionsKaraoke`,
 "font", "fontStyle", "size" (pixels at 1080 wide), "uppercase", "punctuation", "color",
 "highlight", "highlightText", "grow", "outline", "outlineColor", "shadow", "background",
 "backgroundColor", "backgroundOpacity", "radius", "x", "y", "width", "animation", "hold",
-"speakerColors", "fixes", "replace", "live"}`.
+"speakerColors", "fixes", "shout" (capitals when shouted), "censor" (`stars`: `F***`, `vowel`:
+`f*ck`), "wordColors" (`huh=#7a5cfa, …`: a phrase holding the word in that colour), "replace",
+"live"}`.
 
 ## Sound
 
@@ -284,6 +337,7 @@ Command: `shorts.captions` (and `shorts.captionsPop`, `shorts.captionsKaraoke`,
 | Bleep Swear Words | Mutes each strong swear word in the transcript (Volume keyframes on its clip), puts a beep over it on a new **Bleeps** track, and masks it in Word Captions (`F***`), before or after the captions are made. | `shorts.bleep` `{"words": [...]?, "extraWords": [...]?, "hz": 1000, "beepDb": -14}` |
 | Duck Music Under Speech | Select the music; it is tagged Music, the clips under it Dialogue, and Essential Sound's ducking lowers the music whenever someone talks. | `shorts.duckMusic` `{"reduceDb": -15}` |
 | Sound Effect at Playhead | Drops the sound selected in the Project panel at the playhead on the first free audio track (one is added if needed), without moving anything. Import your sound effects first. | `shorts.soundEffect` `{"item": id?}` |
+| Bass Hit at Playhead | A bass hit (synthesised, or the meme folder's `boom` sound) at the playhead on the **Bass Hits** track. | `shorts.bassHit` `{"time": ticks?, "folder": "…"?}` |
 
 `words` replaces the built-in list (common strong swears; mild words such as "damn" are left
 alone); `extraWords` adds to it. Words the transcription already starred out (`f***`) count
@@ -310,5 +364,6 @@ up and slows down with them, and timeline thumbnails follow. The sound is not re
 
 ## Not yet
 
-- Sound effects are not bundled (every asset in FilmCraft must be openly licensed); import your
-  own and use **Sound Effect at Playhead**.
+- Sound effects and memes are not bundled (every asset in FilmCraft must be openly licensed);
+  import your own and use **Sound Effect at Playhead**, or keep them in the meme folder. The bass
+  hit is synthesised.

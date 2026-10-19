@@ -57,6 +57,8 @@ pub mod shorts_captions;
 pub mod shorts_formats;
 pub mod shorts_fx;
 pub mod shorts_layout;
+pub mod shorts_memes;
+pub(crate) mod shorts_reaction;
 pub mod shorts_track;
 pub(crate) mod shorts_trim;
 pub mod source_monitor;
@@ -379,6 +381,9 @@ pub struct EditorState {
     /// The report of the last Shorts ▸ Auto Edit… (every version tried, its score and checks).
     #[serde(default)]
     pub shorts_auto: Option<serde_json::Value>,
+    /// What the last Reaction Split made: its scenes, hits, memes and ending.
+    #[serde(default)]
+    pub shorts_reaction: Option<serde_json::Value>,
 }
 
 /// Events for frontends (drained each frame).

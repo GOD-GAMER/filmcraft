@@ -3771,3 +3771,27 @@
 	Faster	更快
 	Balanced	均衡
 	Better Quality	更高画质
+	Reaction Split	反应分屏
+	Bass Hit at Playhead	在播放头处添加低音重击
+	Meme Drops	表情包插入
+	Drop Memes on Their Words	在对应的词上插入表情包
+	Drop Meme at Playhead…	在播放头处插入表情包…
+	Open Meme Folder	打开表情包文件夹
+	A streamer talking over the game suits the reaction split.	主播边玩边说话，适合反应分屏。
+	Bass hits and flashes	低音重击和闪光
+	Bass hits: {n}	低音重击：{n}
+	Best of the other formats	其他格式中最好的
+	Black-and-white ending	黑白结尾
+	Bleep swears	哔掉脏话
+	Full-screen gameplay and face moments	全屏的游戏画面和面部时刻
+	Full-screen moments: {n}	全屏时刻：{n}
+	Gameplay and your model split in half, captions on the seam, full-screen moments, bass hits, memes and a black-and-white ending.	游戏画面和你的模型各占一半，字幕在分界处，全屏时刻、低音重击、表情包和黑白结尾。
+	Meme drops from your meme folder	从你的表情包文件夹插入表情包
+	Meme folder:	表情包文件夹：
+	Memes: {n}	表情包：{n}
+	Name each file after the word that drops it (huh.mp4, bruh.png, oh no.gif). A boom.wav there replaces the bass hit.	用触发它的词给每个文件命名（huh.mp4、bruh.png、oh no.gif）。放入 boom.wav 可替换低音重击。
+	Punch-ins, bass hits and flashes on loud moments	在响亮的时刻推近镜头、低音重击和闪光
+	Reaction	反应
+	The reaction split needs a model.	反应分屏需要模型。
+	Tries Gameplay + Model, Model Spotlight and Full Frame + Blur and keeps the one that scores best.	尝试游戏画面 + 模型、模型特写和完整画面 + 模糊，保留得分最高的一个。
+	Trim, bleep swears and black-and-white ending	裁剪、哔掉脏话和黑白结尾

@@ -261,6 +261,8 @@ fn auto_edit_window_runs_reports_and_can_switch_versions() {
     assert!(d.app().ui.shorts.auto.is_some(), "the window is open");
     assert_eq!(d.undo_len(), undo, "nothing happens until asked");
     d.click("shortsAuto.platform.tiktok");
+    // the other formats (the Reaction Split, the default, is one version)
+    d.click("shortsAuto.style.formats");
     d.click("shortsAuto.run");
     d.settle();
     let r = d.app().ui.shorts.auto.clone().unwrap().result;
@@ -291,4 +293,75 @@ fn auto_edit_window_runs_reports_and_can_switch_versions() {
     assert!(d.app().ui.shorts.auto.is_none());
     assert_eq!(d.undo_len(), undo + 1);
     assert_eq!(d.app().session.state.shorts_auto.clone().unwrap()["platform"], "tiktok");
+}
+
+#[test]
+fn auto_edit_makes_the_reaction_split_by_default() {
+    let mut s = Session::default();
+    s.execute("file.openDemoProject", json!({})).unwrap();
+    let mut d = Driver::with(s);
+    let undo = d.undo_len();
+    d.ok("ui.menu.invoke", json!({"id": "shorts.autoEdit"}));
+    d.frames(3);
+    let els = d.call("ui.elements", json!({})).to_string();
+    assert!(els.contains("shortsAuto.style.reaction") && els.contains("shortsAuto.memes"), "the style and meme drops are offered");
+    assert_eq!(d.app().ui.shorts.auto.clone().unwrap().params["style"], "reaction", "the Reaction Split is the default");
+    assert!(!els.contains("shortsAuto.tryFormats"), "trying formats is for the other style");
+    // a meme folder of its own
+    let memes = std::path::PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("auto-edit-memes");
+    d.app().ui.shorts.auto.as_mut().unwrap().params["memesFolder"] = json!(memes.to_string_lossy());
+    d.frames(2);
+    d.click("shortsAuto.openMemes");
+    assert!(memes.is_dir(), "Open Meme Folder makes the folder");
+    assert!(d.app().ui.extras.opened.iter().any(|o| std::path::Path::new(o) == memes), "and shows it");
+    d.click("shortsAuto.run");
+    d.settle();
+    let r = d.app().ui.shorts.auto.clone().unwrap().result;
+    assert_eq!(r["versions"][0]["format"], "reaction", "{r}");
+    assert_eq!(d.undo_len(), undo + 1, "one undo step");
+    let q = d.app().session.active_sequence().unwrap().clone();
+    assert_eq!((q.settings.width, q.settings.height), (1080, 1920));
+    assert!(r["reaction"]["scenes"].is_array(), "{r}");
+    assert!(d.call("ui.elements", json!({})).to_string().contains("shortsAuto.export"), "the report is shown");
+    snapshot(&mut d, "auto-edit-reaction.png");
+    d.click("shortsAuto.ok");
+    assert!(d.app().ui.shorts.auto.is_none());
+}
+
+/// A picture of the window, when `FILMCRAFT_UI_SNAPSHOT_DIR` names a folder for it.
+fn snapshot(d: &mut Driver, name: &str) {
+    if let Some(dir) = std::env::var_os("FILMCRAFT_UI_SNAPSHOT_DIR") {
+        let dir = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        d.harness.render().unwrap().save(dir.join(name)).unwrap();
+    }
+}
+
+#[test]
+fn formats_window_offers_the_reaction_split_and_its_options() {
+    let mut s = Session::default();
+    s.execute("file.openDemoProject", json!({})).unwrap();
+    let mut d = Driver::with(s);
+    d.ok("ui.menu.invoke", json!({"id": "shorts.format"}));
+    d.settle();
+    d.click("shortsFormats.format.reaction");
+    d.settle();
+    d.settle();
+    let r = d.app().ui.shorts.format.clone().unwrap().result;
+    assert_eq!(r["format"], "reaction", "{r}");
+    let p = d.app().ui.shorts.format.clone().unwrap().params;
+    assert_eq!((p["bleep"].as_bool(), p["progressBar"].as_bool()), (Some(true), Some(false)), "its own defaults, not the last format's: {p}");
+    let els = d.call("ui.elements", json!({})).to_string();
+    for id in ["shortsFormats.scenes", "shortsFormats.hits", "shortsFormats.ending", "shortsFormats.bleep", "shortsFormats.memes"] {
+        assert!(els.contains(id), "{id}");
+    }
+    assert!(!els.contains("shortsFormats.loop\""), "its own ending, not a loop");
+    snapshot(&mut d, "formats-reaction.png");
+    // the black-and-white ending off: made again without it
+    d.click("shortsFormats.ending");
+    d.settle();
+    d.settle();
+    let r = d.app().ui.shorts.format.clone().unwrap().result;
+    assert!(r["reaction"]["ending"].is_null(), "{r}");
+    d.click("shortsFormats.ok");
 }

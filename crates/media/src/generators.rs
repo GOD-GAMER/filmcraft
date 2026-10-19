@@ -55,6 +55,12 @@ pub enum Generator {
         hz: f32,
         db: f32,
     },
+    /// A bass hit (the boom under a cut in short-form edits), synthesised: a sine dropping from
+    /// about 130 Hz to 42 Hz with a click on top, saturated, fading over about a second (dBFS of
+    /// the peak). Made here from a formula, so it is nobody's recording.
+    Boom {
+        db: f32,
+    },
 }
 
 impl Generator {
@@ -67,13 +73,14 @@ impl Generator {
             Generator::CountingLeader => "Universal Counting Leader".into(),
             Generator::Demo(d) => d.file_name().into(),
             Generator::Tone { hz, .. } => format!("Tone {hz} Hz"),
+            Generator::Boom { .. } => "Bass Hit".into(),
         }
     }
     fn has_audio(&self) -> bool {
-        matches!(self, Generator::BarsAndTone | Generator::CountingLeader | Generator::Demo(_) | Generator::Tone { .. })
+        matches!(self, Generator::BarsAndTone | Generator::CountingLeader | Generator::Demo(_) | Generator::Tone { .. } | Generator::Boom { .. })
     }
     fn has_video(&self) -> bool {
-        !matches!(self, Generator::Tone { .. })
+        !matches!(self, Generator::Tone { .. } | Generator::Boom { .. })
     }
 }
 
@@ -205,8 +212,27 @@ fn audio_sample(g: &Generator, t: f32, n: i64) -> (f32, f32) {
             (s, s)
         }
         Generator::Demo(scene) => demo_audio(*scene, t, n),
+        Generator::Boom { db: d } => {
+            let s = boom(t, n) * db(*d);
+            (s, s)
+        }
         _ => (0.0, 0.0),
     }
+}
+
+/// One sample of [`Generator::Boom`] at `t` seconds (`n`: the sample's index, for the click's
+/// noise), peaking near ±1.
+fn boom(t: f32, n: i64) -> f32 {
+    if !(t.is_finite() && t >= 0.0) {
+        return 0.0;
+    }
+    // 4 ms attack, then a fade with a 0.32 s time constant
+    let env = if t < 0.004 { t / 0.004 } else { (-(t - 0.004) / 0.32).exp() };
+    // the pitch falls from 42 + 90 Hz to 42 Hz (time constant 55 ms): the phase is its integral
+    let (base, drop, tau) = (42.0f32, 90.0f32, 0.055f32);
+    let phase = TAU * (base * t + drop * tau * (1.0 - (-t / tau).exp()));
+    let click = hash(n) * (-t / 0.008).exp() * 0.35;
+    ((phase.sin() * env + click) * 1.6).tanh()
 }
 
 fn demo_audio(scene: DemoScene, t: f32, n: i64) -> (f32, f32) {
@@ -296,7 +322,7 @@ pub fn render(g: &Generator, w: u32, h: u32, t: f32, frame: i64, rate: FrameRate
             px.as_chunks_mut::<4>().0.iter_mut().for_each(|p| p.copy_from_slice(&c));
         }
         Generator::BlackVideo => px.as_chunks_mut::<4>().0.iter_mut().for_each(|p| p.copy_from_slice(&[0, 0, 0, 255])),
-        Generator::TransparentVideo | Generator::Tone { .. } => {}
+        Generator::TransparentVideo | Generator::Tone { .. } | Generator::Boom { .. } => {}
         Generator::CountingLeader => leader(&mut px, wu, hu, t, frame, rate),
         Generator::Demo(scene) => {
             let scene = *scene;
@@ -547,6 +573,24 @@ fn demo_pixel(scene: DemoScene, u: f32, v: f32, aspect: f32, t: f32) -> [f32; 3]
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_bass_hit_is_a_short_loud_boom_that_never_clips() {
+        let g = GeneratorSource::new(Generator::Boom { db: -3.0 }, 1080, 1920, FrameRate::FPS_30, Tick::from_seconds_f64(1.4));
+        assert!(g.info().audio().is_some() && !Generator::Boom { db: -3.0 }.has_video());
+        let buf = g.audio(0, 67_200, 48_000).unwrap();
+        let all: Vec<f32> = buf.channels.iter().flatten().copied().collect();
+        assert!(!all.is_empty() && all.iter().all(|v| v.is_finite()));
+        let peak = all.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        assert!(peak <= 1.0 && peak > 0.3, "{peak}");
+        // a thump that has died away by the end of the clip (1.4 s)
+        let ch = &buf.channels[0];
+        let tail = ch[ch.len() - 4800..].iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        assert!(tail < peak * 0.1, "{tail} {peak}");
+        // hostile times are silence
+        assert_eq!(boom(f32::NAN, 0), 0.0);
+        assert_eq!(boom(-1.0, 0), 0.0);
+    }
 
     #[test]
     fn deterministic_and_scaled() {

@@ -588,7 +588,7 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
         || (id == "file.open" && params.get("path").is_none())
         || (id == "file.save" && params.get("path").is_none() && app.session.path.is_none())
         || (matches!(id, "captions.import" | "captions.export") && params.get("path").is_none())
-        || (matches!(id, "shorts.chatOverlay" | "shorts.chatHighlights") && params.get("path").is_none())
+        || (matches!(id, "shorts.chatOverlay" | "shorts.chatHighlights" | "shorts.memeDrop") && params.get("path").is_none())
         || (id == "graphics.newFromFile" && params.get("path").is_none())
         || (crate::EXPORT_SAVE_DIALOGS.iter().any(|(c, ..)| *c == id) && params.get("path").is_none())
     {
@@ -597,6 +597,14 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
     let r = app.session.execute(id, params).map_err(|e| e.to_string());
     if let Err(e) = &r {
         app.ui.status = e.clone();
+    }
+    // Open Meme Folder shows the folder (made when missing) in the file manager
+    if let Ok(v) = &r
+        && id == "shorts.memeFolder"
+        && let Some(folder) = v.get("folder").and_then(Value::as_str)
+        && let Err(e) = crate::panels::menu_dialogs::open_path(app, ctx, folder, false)
+    {
+        app.ui.status = e;
     }
     // a short made for a platform shows that platform's safe zones
     if let Ok(v) = &r

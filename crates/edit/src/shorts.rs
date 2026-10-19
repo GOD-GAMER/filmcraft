@@ -384,6 +384,52 @@ pub fn mask_word(word: &str) -> String {
         .collect()
 }
 
+/// What a transcriber that stars swear words out writes ("f***", "sh*t", "b****"): the first
+/// letter, then this many stars, stand for the rest of these words.
+const STARRED: &[(char, usize, &str)] = &[('f', 3, "uck"), ('s', 3, "hit"), ('b', 4, "itch"), ('c', 3, "unt"), ('d', 3, "ick"), ('a', 2, "ss")];
+
+/// `word` censored the way short-form captions do it: one vowel of the swear in it starred
+/// ("fucking" → "f*cking", "Bullshit!" → "Bullsh*t!", "BITCH" → "B*TCH"), case and punctuation
+/// kept. A word a transcriber already starred out ("f***ing") is written back first where it is
+/// one of the common ones (as many letters as it had stars), else left as it is. The number of
+/// characters stays the same, like [`mask_word`].
+pub fn mask_vowel(word: &str) -> String {
+    let chars: Vec<char> = word.chars().collect();
+    let first_letter = chars.iter().position(|c| c.is_alphabetic());
+    let mut chars = match (first_letter, chars.iter().position(|c| *c == '*')) {
+        (Some(f), Some(st)) if st == f + 1 => {
+            let stars = chars.iter().skip(st).take_while(|c| **c == '*').count();
+            let lead = chars.get(f).map_or('?', |c| c.to_ascii_lowercase());
+            match STARRED.iter().find(|(c, n, _)| *c == lead && *n == stars) {
+                Some((_, _, rest)) => {
+                    // the stars become the letters again, in the word's case
+                    let upper = chars.get(f).is_some_and(|c| c.is_uppercase()) && chars.iter().skip(st + stars).any(|c| c.is_uppercase());
+                    let rest: Vec<char> = rest.chars().map(|c| if upper { c.to_ascii_uppercase() } else { c }).collect();
+                    let mut out: Vec<char> = chars.iter().take(st).copied().collect();
+                    out.extend(rest);
+                    out.extend(chars.iter().skip(st + stars).copied());
+                    out
+                }
+                None => return word.to_string(),
+            }
+        }
+        (_, Some(_)) => return word.to_string(),
+        _ => chars,
+    };
+    // the letters, lowercased, with where each one is in `chars`
+    let letters: Vec<(usize, char)> =
+        chars.iter().enumerate().filter(|(_, c)| c.is_alphanumeric()).map(|(i, c)| (i, c.to_lowercase().next().unwrap_or(*c))).collect();
+    let low: String = letters.iter().map(|(_, c)| *c).collect();
+    let is_vowel = |c: char| matches!(c, 'a' | 'e' | 'i' | 'o' | 'u');
+    // inside the swear stem when there is one ("bullshit": the i of "shit"), else after the first letter
+    let from = ["fuck", "shit", "bitch", "cunt"].iter().find_map(|stem| low.find(stem).map(|b| low[..b].chars().count())).unwrap_or(1);
+    let at = letters.iter().skip(from).find(|(_, c)| is_vowel(*c)).or_else(|| letters.get(from.min(letters.len().saturating_sub(1)).max(1))).map(|(i, _)| *i);
+    if let Some(slot) = at.and_then(|i| chars.get_mut(i)) {
+        *slot = '*';
+    }
+    chars.into_iter().collect()
+}
+
 /// Every place a phrase from `phrases` is said: the index of its first word in `words`. A phrase
 /// is one or more words, compared after [`normalize_word`] ("oh my god" matches "Oh, my God!").
 /// Empty phrases are ignored. Matches are in time order and never overlap.
@@ -616,6 +662,28 @@ mod tests {
         assert_eq!(mask_word("SHIT"), "S***");
         assert_eq!(mask_word("ünïcödé"), "ü******");
         assert_eq!(mask_word("Fucking!").chars().count(), "Fucking!".chars().count());
+        // one vowel of the swear, as short-form captions write it
+        assert_eq!(mask_vowel("fuck"), "f*ck");
+        assert_eq!(mask_vowel("Fucking!"), "F*cking!");
+        assert_eq!(mask_vowel("BITCH!"), "B*TCH!");
+        assert_eq!(mask_vowel("bullshit-"), "bullsh*t-");
+        assert_eq!(mask_vowel("motherfucker"), "motherf*cker");
+        assert_eq!(mask_vowel("ass"), "a*s");
+        assert_eq!(mask_vowel("dick"), "d*ck");
+        assert_eq!(mask_vowel("Fucking!").chars().count(), "Fucking!".chars().count());
+        // what Whisper writes is written back first
+        assert_eq!(mask_vowel("f***"), "f*ck");
+        assert_eq!(mask_vowel("f***ing"), "f*cking");
+        assert_eq!(mask_vowel("F***!"), "F*ck!");
+        assert_eq!(mask_vowel("F***ING"), "F*CKING");
+        assert_eq!(mask_vowel("sh*t"), "sh*t");
+        assert_eq!(mask_vowel("b****"), "b*tch");
+        // unknown starring stays; odd input never panics
+        assert_eq!(mask_vowel("x***"), "x***");
+        assert_eq!(mask_vowel("*"), "*");
+        for w in ["", "!", "a", "é", "ß*", "f", "***", "f*", "Ⅷ"] {
+            let _ = mask_vowel(w);
+        }
     }
 
     #[test]

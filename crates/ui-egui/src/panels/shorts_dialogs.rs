@@ -742,7 +742,7 @@ fn format_apply(app: &mut FilmcraftApp, ctx: &egui::Context, d: &mut Draft, now:
                 app.ui.program.safe_zone = pf.to_string();
             }
             // the first preview fills in every option the window shows
-            if d.params.get("title").is_none()
+            if (d.params.get("title").is_none() || d.params.get("bleep").is_none())
                 && let Some(full) = v.get("options")
             {
                 d.params = full.clone();
@@ -798,6 +798,11 @@ fn formats_window(app: &mut FilmcraftApp, ctx: &egui::Context) {
         ui.separator();
         ui.label(RichText::new(tl!("Format:")).strong());
         let formats = [
+            (
+                "reaction",
+                tl!("Reaction Split"),
+                tl!("Gameplay and your model split in half, captions on the seam, full-screen moments, bass hits, memes and a black-and-white ending."),
+            ),
             ("gameplay", tl!("Gameplay + Model"), tl!("Gameplay on top, your model in its own box below, a hook title and captions.")),
             ("fullFrame", tl!("Full Frame + Blur"), tl!("The whole clip in the middle over a blurred copy, a title above and captions below.")),
             ("meme", tl!("Meme Caption Bar"), tl!("Big black text on a white bar above the clip, like a meme.")),
@@ -808,7 +813,14 @@ fn formats_window(app: &mut FilmcraftApp, ctx: &egui::Context) {
             let r = ui.radio(p["format"].as_str() == Some(k), name);
             elems.push((format!("{pre}.format.{k}"), r.rect, name.to_string()));
             if r.clicked() && p["format"].as_str() != Some(k) {
+                // the Reaction Split has its own bleeps, punch-ins, progress bar and ending
+                let reaction = k == "reaction" || p["format"].as_str() == Some("reaction");
                 p["format"] = json!(k);
+                if reaction && let Some(m) = p.as_object_mut() {
+                    for key in ["bleep", "hype", "progressBar", "loop"] {
+                        m.remove(key);
+                    }
+                }
                 // the new format's own defaults: its title (unless one was typed), captions, hook
                 if let Some(m) = p.as_object_mut() {
                     let typed =
@@ -833,7 +845,7 @@ fn formats_window(app: &mut FilmcraftApp, ctx: &egui::Context) {
             _ => tl!("Hook title:"),
         };
         text(ui, &mut elems, pre, p, "title", title_label, "WAIT FOR IT…");
-        if matches!(fmt.as_str(), "gameplay" | "spotlight") {
+        if matches!(fmt.as_str(), "gameplay" | "spotlight" | "reaction") {
             check(ui, &mut elems, pre, p, "hook", tl!("Show the hook title"));
         }
         if !matches!(fmt.as_str(), "fullFrame" | "meme") {
@@ -850,11 +862,19 @@ fn formats_window(app: &mut FilmcraftApp, ctx: &egui::Context) {
                 ("box", tl!("Highlight box")),
                 ("oneWord", tl!("One word")),
                 ("plain", tl!("Plain")),
+                ("reaction", tl!("Reaction")),
             ];
             if p.get("captionStyle").is_none() {
                 p["captionStyle"] = json!("auto");
             }
             radios(ui, &mut elems, pre, p, "captionStyle", tl!("Caption style:"), &styles);
+        }
+        if fmt == "reaction" {
+            check(ui, &mut elems, pre, p, "scenes", tl!("Full-screen gameplay and face moments"));
+            check(ui, &mut elems, pre, p, "hits", tl!("Bass hits and flashes"));
+            check(ui, &mut elems, pre, p, "ending", tl!("Black-and-white ending"));
+            check(ui, &mut elems, pre, p, "bleep", tl!("Bleep swears"));
+            ui.add_enabled_ui(has_words, |ui| check(ui, &mut elems, pre, p, "memes", tl!("Meme drops from your meme folder")));
         }
         check(ui, &mut elems, pre, p, "progressBar", tl!("Progress bar"));
         if fmt == "countdown" {
@@ -863,7 +883,9 @@ fn formats_window(app: &mut FilmcraftApp, ctx: &egui::Context) {
         } else {
             length_row(ui, &mut elems, pre, p);
         }
-        check(ui, &mut elems, pre, p, "loop", tl!("Loop ending (blends the end into the start)"));
+        if fmt != "reaction" {
+            check(ui, &mut elems, pre, p, "loop", tl!("Loop ending (blends the end into the start)"));
+        }
         // what came out
         let pf = d.result["platform"].as_str().and_then(filmcraft_engine::shorts_formats::platform);
         if let (Some(secs), Some(pf)) = (d.result["seconds"].as_f64(), pf) {
@@ -926,6 +948,7 @@ fn format_name(id: &str) -> &'static str {
         "meme" => tl!("Meme Caption Bar"),
         "spotlight" => tl!("Model Spotlight"),
         "countdown" => tl!("Top Moments Countdown"),
+        "reaction" => tl!("Reaction Split"),
         _ => tl!("Gameplay + Model"),
     }
 }
@@ -945,6 +968,8 @@ fn check_note(c: &Value) -> String {
         ("fitsClip", "spotlight") => tl!("Talk over a quiet game suits the spotlight.").to_string(),
         ("fitsClip", "noModel") => tl!("The spotlight needs a model.").to_string(),
         ("fitsClip", "gameplay") => tl!("Game action suits big gameplay.").to_string(),
+        ("fitsClip", "reaction") => tl!("A streamer talking over the game suits the reaction split.").to_string(),
+        ("fitsClip", "splitNoModel") => tl!("The reaction split needs a model.").to_string(),
         ("fitsClip", _) => tl!("The whole picture, for clips where everything matters.").to_string(),
         ("captionClash", "clash") => tl!("The stream's own captions show under the new ones.").to_string(),
         ("captionClash", "cut") => tl!("The stream's own captions are cut off.").to_string(),
@@ -964,6 +989,10 @@ fn step_note(st: &Value) -> String {
         "countdown" => tlf!("Moments: {n}", n),
         "captions" => tl!("Captions and hook title").to_string(),
         "loop" => tl!("Loop ending").to_string(),
+        "scenes" => tlf!("Full-screen moments: {n}", n = st["game"].as_u64().unwrap_or(0) + st["face"].as_u64().unwrap_or(0)),
+        "hits" => tlf!("Bass hits: {n}", n),
+        "memes" => tlf!("Memes: {n}", n),
+        "ending" => tl!("Black-and-white ending").to_string(),
         _ => String::new(),
     }
 }
@@ -999,6 +1028,7 @@ fn auto_window(app: &mut FilmcraftApp, ctx: &egui::Context) {
     let mut action = None;
     let mut run = false;
     let mut pick: Option<Value> = None;
+    let mut open_memes = false;
     let has_words = !filmcraft_engine::transcript::sequence_words(&app.session).is_empty();
     egui::Window::new(tl!("Auto Edit")).id(egui::Id::new("shorts-auto")).collapsible(false).resizable(false).default_width(480.0).show(ctx, |ui| {
         ui.label(RichText::new(tl!("Auto Edit tries several versions of the short, checks each one and keeps the best.")).weak());
@@ -1023,14 +1053,53 @@ fn auto_window(app: &mut FilmcraftApp, ctx: &egui::Context) {
                 }
             }
         });
-        text(ui, &mut elems, pre, p, "title", tl!("Hook title:"), "WAIT FOR IT…");
-        check(ui, &mut elems, pre, p, "tryFormats", tl!("Try formats and layouts"));
-        ui.add_enabled_ui(has_words, |ui| check(ui, &mut elems, pre, p, "captions", tl!("Captions and hook title")));
+        if p.get("style").is_none() {
+            p["style"] = json!("reaction");
+        }
+        radios(ui, &mut elems, pre, p, "style", tl!("Style:"), &[("reaction", tl!("Reaction Split")), ("formats", tl!("Best of the other formats"))]);
+        let reaction = p["style"].as_str() != Some("formats");
+        ui.indent(format!("{pre}.styleDesc"), |ui| {
+            let desc = if reaction {
+                tl!("Gameplay and your model split in half, captions on the seam, full-screen moments, bass hits, memes and a black-and-white ending.")
+            } else {
+                tl!("Tries Gameplay + Model, Model Spotlight and Full Frame + Blur and keeps the one that scores best.")
+            };
+            ui.label(RichText::new(desc).weak().small());
+        });
+        if !reaction {
+            text(ui, &mut elems, pre, p, "title", tl!("Hook title:"), "WAIT FOR IT…");
+            check(ui, &mut elems, pre, p, "tryFormats", tl!("Try formats and layouts"));
+        }
+        let caption_label = if reaction { tl!("Captions") } else { tl!("Captions and hook title") };
+        ui.add_enabled_ui(has_words, |ui| check(ui, &mut elems, pre, p, "captions", caption_label));
         if !has_words {
             ui.label(RichText::new(tl!("Transcribe the clip first to add captions (Sequence ▸ Transcript ▸ Transcribe…).")).weak().small());
         }
-        check(ui, &mut elems, pre, p, "hype", tl!("Punch-ins on loud moments"));
-        check(ui, &mut elems, pre, p, "finish", tl!("Trim, bleep swears and loop ending"));
+        if reaction {
+            check(ui, &mut elems, pre, p, "hype", tl!("Punch-ins, bass hits and flashes on loud moments"));
+            check(ui, &mut elems, pre, p, "finish", tl!("Trim, bleep swears and black-and-white ending"));
+            ui.add_enabled_ui(has_words, |ui| check(ui, &mut elems, pre, p, "memes", tl!("Meme drops from your meme folder")));
+            if p["memes"] == true {
+                let hint = filmcraft_engine::shorts_memes::default_folder().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+                text(ui, &mut elems, pre, p, "memesFolder", tl!("Meme folder:"), &hint);
+                ui.horizontal(|ui| {
+                    ui.add_space(154.0);
+                    let r = ui.small_button(tl!("Open Meme Folder"));
+                    elems.push((format!("{pre}.openMemes"), r.rect, "Open Meme Folder".into()));
+                    if r.clicked() {
+                        open_memes = true;
+                    }
+                });
+                ui.label(
+                    RichText::new(tl!("Name each file after the word that drops it (huh.mp4, bruh.png, oh no.gif). A boom.wav there replaces the bass hit."))
+                        .weak()
+                        .small(),
+                );
+            }
+        } else {
+            check(ui, &mut elems, pre, p, "hype", tl!("Punch-ins on loud moments"));
+            check(ui, &mut elems, pre, p, "finish", tl!("Trim, bleep swears and loop ending"));
+        }
         ui.add_space(4.0);
         if d.pending > 0 {
             ui.horizontal(|ui| {
@@ -1130,6 +1199,13 @@ fn auto_window(app: &mut FilmcraftApp, ctx: &egui::Context) {
     }
     if crate::widgets::escape_closes(ctx) {
         action = Some("cancel");
+    }
+    if open_memes {
+        let folder = d.params.get("memesFolder").and_then(Value::as_str).map(str::trim).filter(|f| !f.is_empty());
+        let q = folder.map_or_else(|| json!({}), |f| json!({"folder": f}));
+        if let Err(e) = crate::menus::invoke(app, ctx, "shorts.memeFolder", q) {
+            d.error = e;
+        }
     }
     // a run starts a frame after "Checking versions…" is shown
     if run || pick.is_some() {

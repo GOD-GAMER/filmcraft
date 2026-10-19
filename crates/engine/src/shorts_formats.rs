@@ -169,10 +169,13 @@ pub enum Format {
     Meme,
     Spotlight,
     Countdown,
+    /// A reaction clip: split screen, captions on the seam, scene switches, hits, memes, a
+    /// black-and-white ending ([`crate::shorts_reaction`]).
+    Reaction,
 }
 
 impl Format {
-    pub const ALL: [Format; 5] = [Format::Gameplay, Format::FullFrame, Format::Meme, Format::Spotlight, Format::Countdown];
+    pub const ALL: [Format; 6] = [Format::Reaction, Format::Gameplay, Format::FullFrame, Format::Meme, Format::Spotlight, Format::Countdown];
 
     pub fn id(self) -> &'static str {
         match self {
@@ -181,6 +184,7 @@ impl Format {
             Format::Meme => "meme",
             Format::Spotlight => "spotlight",
             Format::Countdown => "countdown",
+            Format::Reaction => "reaction",
         }
     }
 
@@ -191,6 +195,7 @@ impl Format {
             Format::Meme => "Meme Caption Bar",
             Format::Spotlight => "Model Spotlight",
             Format::Countdown => "Top Moments Countdown",
+            Format::Reaction => "Reaction Split",
         }
     }
 
@@ -203,6 +208,7 @@ impl Format {
             Format::Gameplay | Format::Countdown => ly::Preset::Stack,
             Format::FullFrame | Format::Meme => ly::Preset::Full,
             Format::Spotlight => ly::Preset::Spotlight,
+            Format::Reaction => ly::Preset::Split,
         }
     }
 }
@@ -232,6 +238,13 @@ struct Opts {
     bleep: bool,
     /// Punch in and shake on the loud moments.
     hype: bool,
+    /// Reaction Split: switch to full-screen gameplay and face, add bass hits and flashes, end in
+    /// black and white, drop memes (from `memes_folder`, else the default meme folder).
+    scenes: bool,
+    hits: bool,
+    ending: bool,
+    memes: bool,
+    memes_folder: Option<String>,
 }
 
 impl Opts {
@@ -241,7 +254,9 @@ impl Opts {
             None => default.map_or(YOUTUBE, |d| d.0),
         };
         let format = match str_p(p, "format") {
-            Some(id) => Format::parse(id).ok_or_else(|| bad(cmd, format!("unknown format `{id}` (gameplay, fullFrame, meme, spotlight, countdown)")))?,
+            Some(id) => {
+                Format::parse(id).ok_or_else(|| bad(cmd, format!("unknown format `{id}` (reaction, gameplay, fullFrame, meme, spotlight, countdown)")))?
+            }
             None => default.map_or(Format::Gameplay, |d| d.1),
         };
         let side = match str_p(p, "side") {
@@ -258,7 +273,9 @@ impl Opts {
         };
         let caption_style = match str_p(p, "captionStyle").map(str::trim) {
             None | Some("" | "auto") => None,
-            Some(s) => Some(cap::Style::parse(s).ok_or_else(|| bad(cmd, format!("unknown caption style `{s}` (pop, karaoke, box, oneWord, plain)")))?),
+            Some(s) => {
+                Some(cap::Style::parse(s).ok_or_else(|| bad(cmd, format!("unknown caption style `{s}` (pop, karaoke, box, oneWord, plain, reaction)")))?)
+            }
         };
         let seconds = num_p(p, "seconds", 0.0, 0.0, 600.0, cmd)?;
         if seconds > 0.0 && seconds < 3.0 {
@@ -269,6 +286,13 @@ impl Opts {
             Some(b @ ("blur" | "black")) => Some(b.to_string()),
             Some(o) => return Err(bad(cmd, format!("`background` must be blur or black, not `{o}`"))),
         };
+        let reaction = format == Format::Reaction;
+        let memes_folder = match p.get("memesFolder") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(f)) if f.trim().is_empty() => None,
+            Some(Value::String(f)) if f.chars().count() <= 4096 => Some(f.trim().to_string()),
+            Some(_) => return Err(bad(cmd, "`memesFolder` must be a folder path")),
+        };
         Ok(Opts {
             platform,
             format,
@@ -277,7 +301,7 @@ impl Opts {
             hook: bool_p(p, "hook").unwrap_or(matches!(format, Format::Gameplay | Format::Countdown)),
             captions: bool_p(p, "captions"),
             caption_style,
-            progress: bool_p(p, "progressBar").unwrap_or(true),
+            progress: bool_p(p, "progressBar").unwrap_or(!reaction),
             seconds,
             loop_end: bool_p(p, "loop").unwrap_or(false),
             loop_seconds: num_p(p, "loopSeconds", 0.5, 0.1, 3.0, cmd)?,
@@ -285,8 +309,13 @@ impl Opts {
             each: num_p(p, "momentSeconds", 8.0, 3.0, 30.0, cmd)?,
             background,
             game: crate::shorts::fractions_p(p, "game", cmd)?,
-            bleep: bool_p(p, "bleep").unwrap_or(false),
-            hype: bool_p(p, "hype").unwrap_or(false),
+            bleep: bool_p(p, "bleep").unwrap_or(reaction),
+            hype: bool_p(p, "hype").unwrap_or(reaction),
+            scenes: bool_p(p, "scenes").unwrap_or(true),
+            hits: bool_p(p, "hits").unwrap_or(true),
+            ending: bool_p(p, "ending").unwrap_or(true),
+            memes: bool_p(p, "memes").unwrap_or(true),
+            memes_folder,
         })
     }
 
@@ -306,6 +335,15 @@ impl Opts {
             "bleep": self.bleep,
             "hype": self.hype,
         });
+        if self.format == Format::Reaction {
+            v["scenes"] = json!(self.scenes);
+            v["hits"] = json!(self.hits);
+            v["ending"] = json!(self.ending);
+            v["memes"] = json!(self.memes);
+            if let Some(f) = &self.memes_folder {
+                v["memesFolder"] = json!(f);
+            }
+        }
         if let Some(g) = self.game {
             v["game"] = json!(g);
         }
@@ -374,6 +412,7 @@ pub(crate) fn format(s: &mut Session, p: &Value, default: Option<(Platform, Form
         None => has_words && o.format != Format::Meme,
     };
     let label = format!("{}: {}", o.platform.name, o.format.name());
+    s.state.shorts_reaction = None;
     let moments = s.edit_group(&label, |s| {
         if vertical {
             clear_previous(s)?;
@@ -381,6 +420,13 @@ pub(crate) fn format(s: &mut Session, p: &Value, default: Option<(Platform, Form
             s.execute("shorts.verticalFill", json!({"name": format!("{seq_name} ({})", o.platform.name)}))?;
         }
         let mut moments = Vec::new();
+        if o.format == Format::Reaction {
+            if o.seconds > 0.0 {
+                crate::shorts_trim::trim_to(s, Tick::from_seconds_f64(o.seconds), cmd)?;
+            }
+            reaction(s, &o, has_words, want_captions, cmd)?;
+            return Ok(moments);
+        }
         if o.format == Format::Countdown {
             moments = crate::shorts_trim::countdown_cut(s, o.moments, Tick::from_seconds_f64(o.each), cmd)?;
         } else if o.seconds > 0.0 {
@@ -413,7 +459,9 @@ pub(crate) fn format(s: &mut Session, p: &Value, default: Option<(Platform, Form
     let secs = q.duration().seconds();
     let opts = o.to_json(want_captions);
     s.state.shorts_format = Some(opts.clone());
+    let made = s.state.shorts_reaction.clone().unwrap_or(Value::Null);
     Ok(json!({
+        "reaction": made,
         "sequence": s.state.active_sequence.map(|i| i.0),
         "platform": o.platform.id,
         "format": o.format.id(),
@@ -437,9 +485,11 @@ fn clear_previous(s: &mut Session) -> Result<()> {
         .filter(|i| s.project.item(i.item).is_some_and(|x| matches!(x.kind, ItemKind::Graphic { .. })))
         .map(|i| i.id)
         .collect();
+    let pr = s.project.clone();
     s.edit_sequence("Clear Format", |q, _, _| {
         q.video_tracks.retain(|t| !(GENERATED.contains(&t.name.as_str()) && t.items.iter().all(|i| graphics.contains(&i.id))));
         crate::shorts_trim::remove_loop(q);
+        crate::shorts_reaction::clear(q, &pr);
         q.check().map_err(EngineError::Other)?;
         Ok(())
     })
@@ -473,6 +523,13 @@ fn arrange(s: &mut Session, o: &Opts, cmd: &str) -> Result<Placed> {
     if o.format == Format::Meme {
         base["background"] = json!("black");
     }
+    if o.format == Format::Reaction {
+        // two halves, nothing behind them; the model's head and shoulders fill the bottom half
+        base["split"] = json!(0.5);
+        base["background"] = json!("black");
+        let model = base.get("model").and_then(|m| serde_json::from_value::<[f64; 4]>(m.clone()).ok()).unwrap_or_else(|| ly::model_region(side_of(&side)));
+        base["model"] = json!(crate::shorts_reaction::top_anchored(model, src, frame.0 / (frame.1 * 0.5)));
+    }
     if let Some(b) = &o.background {
         base["background"] = json!(b);
     }
@@ -482,6 +539,8 @@ fn arrange(s: &mut Session, o: &Opts, cmd: &str) -> Result<Placed> {
     let top = o.platform.top() + 0.01;
     let mut bar = None;
     match o.format {
+        // the split of the frame in half, as it is
+        Format::Reaction => {}
         Format::Gameplay | Format::Countdown | Format::Spotlight => {
             spec.game_y = top + ph / 2.0;
             spec.model_y = (top + ph + 0.015 + spec.model_h / 2.0).min(1.0 - spec.model_h / 2.0);
@@ -657,12 +716,121 @@ fn graphics(s: &mut Session, o: &Opts, placed: &Placed, moments: &[Moment]) -> R
             }
             hook(s, o)?;
         }
-        Format::Gameplay | Format::Spotlight => {
+        Format::Gameplay | Format::Spotlight | Format::Reaction => {
             if o.hook {
                 hook(s, o)?;
             }
         }
     }
+    Ok(())
+}
+
+fn side_of(side: &str) -> ly::Side {
+    if side == "left" { ly::Side::Left } else { ly::Side::Right }
+}
+
+/// The Reaction Split, after any trim: the layout, bleeps, the planned scenes, memes, hits and
+/// grades, punch-ins and captions (see [`crate::shorts_reaction`]). What was made goes to
+/// `shorts_reaction` in the editor state.
+fn reaction(s: &mut Session, o: &Opts, has_words: bool, want_captions: bool, cmd: &str) -> Result<()> {
+    use crate::shorts_reaction as rx;
+    // the model region before it is cut to the half's shape (the face scene cuts its own): one
+    // picked in Layout… for another layout, else the usual corner (a split's own region is
+    // already cut)
+    let side = o.side.clone().unwrap_or_else(|| layout_side(s));
+    let uncut_model = s
+        .state
+        .shorts_layout
+        .as_ref()
+        .filter(|v| v.get("preset").and_then(Value::as_str) != Some("split"))
+        .and_then(|v| v.get("model"))
+        .and_then(|m| serde_json::from_value::<[f64; 4]>(m.clone()).ok())
+        .unwrap_or_else(|| ly::model_region(side_of(&side)));
+    let placed = arrange(s, o, cmd)?;
+    if o.bleep && has_words && !crate::shorts_fx::has_bleeps(s) {
+        let _ = s.execute("shorts.bleep", json!({}));
+    }
+    let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
+    let (fw, fh) = (f64::from(q.settings.width), f64::from(q.settings.height));
+    let dur = q.duration().seconds();
+    let words = if has_words { rx::words_of(s) } else { Vec::new() };
+    let (game, _, src) = rx::regions(s).ok_or_else(|| bad(cmd, "the sequence has no video footage to lay out"))?;
+    let activity = if o.scenes { rx::activity(s, game) } else { Vec::new() };
+    let plan = rx::plan(&words, dur, &activity, rx::Choices { scenes: o.scenes, hits: o.hits, ending: o.ending });
+    let face_region = rx::top_anchored(uncut_model, src, fw / fh.max(1.0));
+    rx::apply_scenes(s, &plan, face_region, game)?;
+    // memes, from the folder named or the default one
+    let folder = o.memes_folder.as_ref().map(std::path::PathBuf::from).or_else(crate::shorts_memes::default_folder);
+    let mut drops = Vec::new();
+    if o.memes
+        && has_words
+        && let Some(f) = &folder
+    {
+        drops = crate::shorts_memes::drop_all(s, f, 0.36, plan.ending, cmd)?;
+    }
+    let hit_sound = folder.as_deref().and_then(crate::shorts_memes::hit_sound);
+    let hits = if o.hits { rx::add_hits(s, &plan.hits, hit_sound.as_deref())? } else { 0 };
+    rx::add_grades(s, &plan)?;
+    if let Some(t) = plan.flash {
+        let r = s.execute("shorts.flash", json!({"time": Tick::from_seconds_f64(t).0, "seconds": 0.35}))?;
+        if let Some(id) = r.get("clip").and_then(Value::as_u64).map(ClipId) {
+            s.edit_sequence("Punchline Flash", |q, _, _| {
+                if let Some(it) = q.video_tracks.iter_mut().flat_map(|t| t.items.iter_mut()).find(|i| i.id == id) {
+                    it.name = rx::FLASH_NAME.into();
+                }
+                Ok(())
+            })?;
+        }
+    }
+    // punch-ins on the loud moments, about one every 8 seconds (none standing out is fine)
+    if o.hype {
+        let n = (dur / 8.0).round().clamp(1.0, 12.0);
+        let _ = s.execute("shorts.hype", json!({"effects": ["punch"], "maxMoments": n}));
+    }
+    if want_captions {
+        let mut p = s.state.shorts_captions.clone().filter(|v| v.get("style").and_then(Value::as_str) == Some("reaction")).unwrap_or_else(|| json!({}));
+        p["style"] = json!(o.caption_style.map_or("reaction", |st| st.name()));
+        // on the seam between the halves
+        let seam = (placed.pane[3]).clamp(0.2, 0.8);
+        let half = 0.035;
+        p["x"] = json!(0.5);
+        p["y"] = json!(o.platform.clamp_y(seam, half));
+        p["width"] = json!(o.platform.text_width(seam, half));
+        p["replace"] = json!(true);
+        let colors: Vec<String> = drops.iter().map(|(w, _, _)| format!("{w}={}", crate::shorts_memes::COLOR)).collect();
+        p["wordColors"] = json!(colors.join(", "));
+        if let Some(m) = p.as_object_mut() {
+            m.remove("live");
+            m.remove("position");
+        }
+        cap::captions(s, &p, cap::Style::Reaction, cmd)?;
+        // under the face where it fills the frame
+        if let Some(face) = plan.face() {
+            let y = o.platform.clamp_y(o.platform.bottom() - 0.07, half);
+            rx::move_captions(s, &[face], y)?;
+        }
+    }
+    if o.hook {
+        hook(s, o)?;
+    }
+    if o.progress {
+        s.execute("shorts.progressBar", json!({"position": "top"}))?;
+    }
+    let scenes: Vec<Value> = plan
+        .segments
+        .iter()
+        .map(|g| json!({"start": g.start, "end": g.end, "scene": match g.scene { rx::Scene::Split => "split", rx::Scene::Game => "game", rx::Scene::Face => "face" }}))
+        .collect();
+    s.state.shorts_reaction = Some(json!({
+        "scenes": scenes,
+        "hits": hits,
+        "flash": plan.flash,
+        "gray": plan.gray.map(|(a, b)| [a, b]),
+        "ending": plan.ending.map(|(a, b)| [a, b]),
+        "memes": drops.iter().map(|(w, f, t)| json!({"word": w, "file": f, "seconds": t})).collect::<Vec<_>>(),
+        "memesFolder": folder.map(|f| f.to_string_lossy().to_string()),
+        "shouted": words.iter().filter(|w| w.loud).count(),
+    }));
     Ok(())
 }
 
@@ -686,6 +854,7 @@ fn captions(s: &mut Session, o: &Opts, placed: &Placed, cmd: &str) -> Result<()>
     let half = 0.03 * lines + 0.005;
     let y = match o.format {
         Format::Gameplay | Format::Countdown => placed.pane[3] - 0.005,
+        Format::Reaction => placed.pane[3],
         // where the card meets the model: over the model's face would hide it
         Format::Spotlight => placed.pane[3] + 0.01,
         Format::FullFrame | Format::Meme => placed.pane[3] + 0.055,

@@ -37,6 +37,9 @@ pub(crate) enum Style {
     Box,
     OneWord,
     Plain,
+    /// Reaction clips: two or three words at a time as said (case and punctuation kept), cream
+    /// with a thick dark outline, in capitals when shouted, swears starred like "f*ck".
+    Reaction,
 }
 
 impl Style {
@@ -47,6 +50,7 @@ impl Style {
             Style::Box => "box",
             Style::OneWord => "oneWord",
             Style::Plain => "plain",
+            Style::Reaction => "reaction",
         }
     }
     pub(crate) fn parse(s: &str) -> Option<Style> {
@@ -56,6 +60,7 @@ impl Style {
             "box" => Style::Box,
             "oneWord" | "one" | "oneword" => Style::OneWord,
             "plain" | "none" => Style::Plain,
+            "reaction" => Style::Reaction,
             _ => return None,
         })
     }
@@ -129,6 +134,12 @@ pub(crate) struct Opts {
     speaker_colors: bool,
     /// Display fixes: (normalized wrong word, replacement).
     fixes: Vec<(String, String)>,
+    /// Phrases said louder than usual show in capitals.
+    shout: bool,
+    /// Bleeped words show as "f*ck" (one vowel starred) instead of "F***".
+    censor_vowel: bool,
+    /// Phrases holding one of these words (normalized) show in its colour (a meme's word).
+    word_colors: Vec<(String, [f32; 4])>,
 }
 
 fn hex(c: [f32; 4]) -> String {
@@ -173,6 +184,9 @@ impl Opts {
             hold: 0.25,
             speaker_colors: false,
             fixes: Vec::new(),
+            shout: false,
+            censor_vowel: false,
+            word_colors: Vec::new(),
         };
         match style {
             Style::Pop => base,
@@ -180,13 +194,28 @@ impl Opts {
             Style::Box => Opts { highlight: [0.55, 0.36, 0.96, 1.0], grow: 0.0, outline: 10.0, shadow: 40.0, ..base },
             Style::OneWord => Opts { max_words: 1, size: base.size * 1.4, anim: Anim::Bounce, grow: 0.0, ..base },
             Style::Plain => Opts { grow: 0.0, anim: Anim::Fade, ..base },
+            Style::Reaction => Opts {
+                max_chars: if vertical { 18 } else { 30 },
+                size: base.size * 0.95,
+                uppercase: false,
+                punctuation: true,
+                color: [1.0, 0.96, 0.86, 1.0],
+                grow: 0.0,
+                outline: 18.0,
+                outline_color: [0.13, 0.08, 0.05, 1.0],
+                shadow: 70.0,
+                hold: 0.1,
+                shout: true,
+                censor_vowel: true,
+                ..base
+            },
         }
     }
 
     pub(crate) fn from_params(p: &Value, frame: (f64, f64), default_y: f64, default_style: Style, cmd: &str) -> Result<Opts> {
         let style = match str_p(p, "style") {
             None => default_style,
-            Some(s) => Style::parse(s).ok_or_else(|| bad(cmd, format!("unknown style `{s}` (pop, karaoke, box, oneWord, plain)")))?,
+            Some(s) => Style::parse(s).ok_or_else(|| bad(cmd, format!("unknown style `{s}` (pop, karaoke, box, oneWord, plain, reaction)")))?,
         };
         let mut o = Opts::defaults(style, frame, default_y);
         if style != Style::OneWord {
@@ -237,6 +266,28 @@ impl Opts {
         }
         o.hold = num_p(p, "hold", o.hold, 0.0, 5.0, cmd)?;
         o.speaker_colors = bool_p(p, "speakerColors").unwrap_or(o.speaker_colors);
+        o.shout = bool_p(p, "shout").unwrap_or(o.shout);
+        o.censor_vowel = match str_p(p, "censor") {
+            None => o.censor_vowel,
+            Some("vowel") => true,
+            Some("stars") => false,
+            Some(other) => return Err(bad(cmd, format!("`censor` must be stars or vowel, not `{other}`"))),
+        };
+        if let Some(c) = p.get("wordColors") {
+            let text = match c {
+                Value::String(s) => s.clone(),
+                Value::Null => String::new(),
+                _ => return Err(bad(cmd, "`wordColors` must be like \"huh=#7a5cfa, bruh=#ff3b30\"")),
+            };
+            for pair in sh::split_phrases(&text).into_iter().take(200) {
+                let (w, c) = pair.split_once('=').ok_or_else(|| bad(cmd, format!("`{pair}` in `wordColors` needs an `=` (word=#rrggbb)")))?;
+                let color = color_p(&json!({ "c": c.trim() }), "c", cmd)?.ok_or_else(|| bad(cmd, format!("`{c}` is not a colour")))?;
+                let key = sh::normalize_word(w);
+                if !key.is_empty() {
+                    o.word_colors.push((key, color));
+                }
+            }
+        }
         if let Some(f) = p.get("fixes") {
             let text = match f {
                 Value::String(s) => s.clone(),
@@ -284,6 +335,9 @@ impl Opts {
             "hold": self.hold,
             "speakerColors": self.speaker_colors,
             "fixes": self.fixes.iter().map(|(a, b)| format!("{a}={b}")).collect::<Vec<_>>().join(", "),
+            "shout": self.shout,
+            "censor": if self.censor_vowel { "vowel" } else { "stars" },
+            "wordColors": self.word_colors.iter().map(|(w, c)| format!("{w}={}", hex(*c))).collect::<Vec<_>>().join(", "),
         })
     }
 }
@@ -304,6 +358,20 @@ fn display_text(w: &str, o: &Opts) -> String {
         }
     }
     if o.uppercase { t.to_uppercase() } else { t }
+}
+
+/// Which `beats` are shouted, from each word's level (`levels`, one per word; empty: none is): a
+/// phrase whose measured words are mostly shouted ([`crate::shorts_fx::shouted`]). Words with no
+/// sound (a bleeped swear is muted) don't count; a phrase of only those takes the one before it.
+fn shouted_beats(beats: &[std::ops::Range<usize>], levels: &[f64]) -> Vec<bool> {
+    let loud = crate::shorts_fx::shouted(levels);
+    let mut out: Vec<bool> = Vec::with_capacity(beats.len());
+    for b in beats {
+        let heard: Vec<bool> = b.clone().filter(|i| levels.get(*i).is_some_and(|l| *l > -60.0)).map(|i| loud.get(i).copied().unwrap_or(false)).collect();
+        let v = if heard.is_empty() { out.last().copied().unwrap_or(false) } else { heard.iter().filter(|x| **x).count() * 2 >= heard.len() };
+        out.push(v);
+    }
+    out
 }
 
 /// Break a phrase into at most `lines` lines of about `max_chars`: spaces become line breaks
@@ -402,10 +470,13 @@ pub(crate) fn captions(s: &mut Session, p: &Value, default_style: Style, cmd: &s
         return Err(bad(cmd, "no transcript yet: run Sequence ▸ Transcript ▸ Transcribe… first so FilmCraft knows when each word is spoken"));
     }
     let o = Opts::from_params(p, (fw, fh), default_y(s, (fw, fh)), default_style, cmd)?;
-    // words already bleeped show masked ("F***")
-    let words = crate::shorts_fx::mask_bleeped(s, words);
+    // how loud each word is said (before masking: the words are the same either way)
+    let levels = if o.shout { crate::shorts_fx::word_levels(s, &words) } else { Vec::new() };
+    // words already bleeped show masked ("F***", or "f*ck")
+    let words = crate::shorts_fx::mask_bleeped(s, words, o.censor_vowel);
     let rules = BeatRules { max_words: o.max_words, max_chars: o.max_chars.saturating_mul(o.lines).saturating_add(o.lines - 1), ..BeatRules::default() };
     let beats = sh::word_beats(&words, &rules);
+    let loud_beats = shouted_beats(&beats, &levels);
     let spans = sh::caption_spans(&words, &beats, Tick::from_seconds_f64(o.hold), rate);
     if spans.is_empty() {
         return Err(bad(cmd, "the transcript's words are too short to show"));
@@ -413,8 +484,22 @@ pub(crate) fn captions(s: &mut Session, p: &Value, default_style: Style, cmd: &s
     if spans.len() > 20_000 {
         return Err(bad(cmd, "too many words for one caption track (more than 20,000); caption a shorter sequence"));
     }
-    // what each word shows as
-    let shown: Vec<SeqWord> = words.iter().map(|wd| SeqWord { text: display_text(&wd.text, &o), ..wd.clone() }).collect();
+    // what each word shows as (shouted phrases in capitals)
+    let mut shown: Vec<SeqWord> = words.iter().map(|wd| SeqWord { text: display_text(&wd.text, &o), ..wd.clone() }).collect();
+    for (b, loud) in beats.iter().zip(&loud_beats) {
+        if *loud {
+            for wd in shown.get_mut(b.clone()).into_iter().flatten() {
+                wd.text = wd.text.to_uppercase();
+            }
+        }
+    }
+    // a phrase holding a coloured word (a meme's) shows in that colour
+    let beat_color = |b: &std::ops::Range<usize>| -> Option<[f32; 4]> {
+        words.get(b.clone())?.iter().find_map(|wd| {
+            let key = sh::normalize_word(&wd.text);
+            o.word_colors.iter().find(|(k, _)| *k == key).map(|(_, c)| *c)
+        })
+    };
     let mut speakers: Vec<&str> = Vec::new();
     for wd in &words {
         if let Some(sp) = wd.speaker.as_deref()
@@ -454,7 +539,7 @@ pub(crate) fn captions(s: &mut Session, p: &Value, default_style: Style, cmd: &s
         };
         let text = break_lines(&text, &ranges, o.max_chars, o.lines);
         let k = sp.word.saturating_sub(beat.start);
-        let base_color = fill_of(beat.start);
+        let base_color = beat_color(&beat).unwrap_or_else(|| fill_of(beat.start));
         let one_word_color = if sp.word % 3 == 2 { o.highlight } else { base_color };
         let spoken = if o.style == Style::OneWord { None } else { ranges.get(k).cloned() };
         // the styled runs: the spoken word (and for karaoke the words before it)
@@ -491,7 +576,7 @@ pub(crate) fn captions(s: &mut Session, p: &Value, default_style: Style, cmd: &s
                 Style::Pop => spoken.clone().into_iter().collect(),
                 Style::Karaoke => ranges.iter().take(k.saturating_add(1)).cloned().collect(),
                 Style::Box => spoken.clone().into_iter().collect(),
-                Style::OneWord | Style::Plain => Vec::new(),
+                Style::OneWord | Style::Plain | Style::Reaction => Vec::new(),
             };
             let runs: Vec<StyleRun> = lit
                 .iter()

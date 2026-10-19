@@ -134,6 +134,12 @@ fn effects_at_with(s: &mut Session, label: &str, times: &[Tick], k: Picks, flash
 /// The level curve (dBFS every [`HOP_S`]) of the active sequence's mix over `from..to`.
 pub(crate) fn mix_levels(s: &Session, from: Tick, to: Tick) -> Result<Vec<f64>> {
     let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
+    Ok(levels_of(s, q, from, to))
+}
+
+/// [`mix_levels`] of sequence `q` (which need not be in the project: a copy with some clips left
+/// out works).
+fn levels_of(s: &Session, q: &filmcraft_project::Sequence, from: Tick, to: Tick) -> Vec<f64> {
     let sr = q.settings.sample_rate.max(8000);
     let start = from.to_units_floor(i64::from(sr));
     let end = to.to_units_floor(i64::from(sr));
@@ -158,7 +164,56 @@ pub(crate) fn mix_levels(s: &Session, from: Tick, to: Tick) -> Result<Vec<f64>> 
         }
         pos += len as i64;
     }
-    Ok(levels)
+    levels
+}
+
+/// Whether `it` is a sound Shorts made itself (a bleep, a bass hit, a meme's sound): left out of
+/// what is measured of the speaker's voice.
+fn is_added_sound(pr: &filmcraft_project::Project, it: &TrackItem) -> bool {
+    it.name.starts_with(crate::shorts_memes::PREFIX)
+        || pr
+            .item(it.item)
+            .is_some_and(|i| matches!(&i.kind, ItemKind::Media(m) if matches!(m.media, MediaRef::Generator(Generator::Tone { .. } | Generator::Boom { .. }))))
+}
+
+/// How loud each of `words` is said (dBFS, the mean power over the word) in the active sequence's
+/// sound without the sounds Shorts added. Empty for a sequence over 15 minutes (nobody shouts a
+/// short that long) or without one.
+pub(crate) fn word_levels(s: &Session, words: &[SeqWord]) -> Vec<f64> {
+    let Some(q) = s.active_sequence() else { return Vec::new() };
+    let dur = q.duration();
+    if dur.seconds() > 15.0 * 60.0 || words.is_empty() {
+        return Vec::new();
+    }
+    let mut voice = q.clone();
+    for t in &mut voice.audio_tracks {
+        t.items.retain(|i| !is_added_sound(&s.project, i));
+    }
+    let levels = levels_of(s, &voice, Tick::ZERO, dur);
+    words
+        .iter()
+        .map(|w| {
+            let (a, b) = ((w.start.seconds() / HOP_S).floor().max(0.0) as usize, (w.end.seconds() / HOP_S).ceil().max(0.0) as usize);
+            let part: Vec<f64> = levels.get(a.min(levels.len())..b.max(a + 1).min(levels.len())).unwrap_or(&[]).to_vec();
+            if part.is_empty() {
+                return -120.0;
+            }
+            let power = part.iter().map(|d| 10f64.powf(d / 10.0)).sum::<f64>() / part.len() as f64;
+            10.0 * power.max(1e-12).log10()
+        })
+        .collect()
+}
+
+/// Which of `levels` (one per word) are shouted: 6 dB or more over the speaker's usual level
+/// (the median word), and not near silence.
+pub(crate) fn shouted(levels: &[f64]) -> Vec<bool> {
+    let mut sorted: Vec<f64> = levels.iter().copied().filter(|v| v.is_finite() && *v > -80.0).collect();
+    if sorted.len() < 4 {
+        return vec![false; levels.len()];
+    }
+    sorted.sort_by(f64::total_cmp);
+    let median = sorted.get(sorted.len() / 2).copied().unwrap_or(-120.0);
+    levels.iter().map(|v| v.is_finite() && *v >= median + 6.0 && *v > -40.0).collect()
 }
 
 pub(crate) fn hype(s: &mut Session, p: &Value) -> Result<Value> {
@@ -529,8 +584,8 @@ pub(crate) fn has_bleeps(s: &Session) -> bool {
     s.active_sequence().is_some_and(|q| q.audio_tracks.iter().flat_map(|t| t.items.iter()).any(|i| is_bleep(&s.project, i)))
 }
 
-/// `words` with the ones under a bleep masked ("F***"), for Word Captions.
-pub(crate) fn mask_bleeped(s: &Session, mut words: Vec<SeqWord>) -> Vec<SeqWord> {
+/// `words` with the ones under a bleep masked ("F***", or "f*ck" with `vowel`), for Word Captions.
+pub(crate) fn mask_bleeped(s: &Session, mut words: Vec<SeqWord>, vowel: bool) -> Vec<SeqWord> {
     let Some(q) = s.active_sequence() else { return words };
     // (range, the words it covers; empty: any word under it)
     let bleeps: Vec<(TimeRange, Vec<String>)> = q
@@ -550,7 +605,7 @@ pub(crate) fn mask_bleeped(s: &Session, mut words: Vec<SeqWord>) -> Vec<SeqWord>
         let mid = Tick(w.start.0.saturating_add(w.end.0.saturating_sub(w.start.0) / 2));
         let key = sh::normalize_word(&w.text);
         if bleeps.iter().any(|(r, list)| r.contains(mid) && (list.is_empty() || list.contains(&key))) {
-            w.text = sh::mask_word(&w.text);
+            w.text = if vowel { sh::mask_vowel(&w.text) } else { sh::mask_word(&w.text) };
         }
     }
     words

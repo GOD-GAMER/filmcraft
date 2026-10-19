@@ -1332,6 +1332,27 @@ impl FilmcraftApp {
                     app.session.execute(&cmd, params).map_err(|e| e.to_string())
                 })
             }
+            // Shorts ▸ Meme Drops ▸ Drop Meme at Playhead…: a picture, GIF, video or sound
+            "shorts.memeDrop" => {
+                let exts: Vec<&str> = filmcraft_media::STILL_EXTENSIONS
+                    .iter()
+                    .chain(filmcraft_media::VIDEO_EXTENSIONS)
+                    .chain(filmcraft_media::AUDIO_EXTENSIONS)
+                    .copied()
+                    .collect();
+                let mut params = params.clone();
+                self.pick(FileDialog::open_files(&exts), move |app, paths| {
+                    let Some(path) = paths.into_iter().next() else { return Ok(Value::Null) };
+                    if let Some(o) = params.as_object_mut() {
+                        o.insert("path".into(), json!(path));
+                    }
+                    let r = app.session.execute("shorts.memeDrop", params).map_err(|e| e.to_string());
+                    if let Err(e) = &r {
+                        app.ui.status = e.clone();
+                    }
+                    r
+                })
+            }
             "captions.import" => self.pick(FileDialog::open_files(&["srt", "vtt", "scc", "mcc", "stl", "ttml", "dfxp", "xml"]), |app, paths| {
                 let Some(path) = paths.into_iter().next() else { return Ok(Value::Null) };
                 app.session.execute("captions.import", json!({"path": path})).map_err(|e| e.to_string())
